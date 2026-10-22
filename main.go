@@ -54,8 +54,9 @@ const defaultConfigJSON = `{
 
   // Подписки добавляются на веб-странице (хранятся в subscriptions.json).
   "sub_interval_hours": 6,
-  // Некоторые панели отдают разный формат в зависимости от клиента;
-  // нужен список ссылок vless:// trojan:// ss:// vmess:// (можно в base64).
+  // Панели отдают разный формат в зависимости от клиента. xsub понимает ссылки
+  // (vless, vmess, trojan, ss, hysteria2, wireguard, socks, http), Clash YAML,
+  // sing-box JSON и JSON Xray; у каждой подписки можно задать свой User-Agent.
   "user_agent": "v2rayN/7.0",
 
   "xray": {

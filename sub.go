@@ -4,7 +4,6 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +23,7 @@ type Node struct {
 	Proto    string         `json:"proto"`
 	Address  string         `json:"address"`
 	Port     int            `json:"port"`
+	Warn     string         `json:"warn,omitempty"`
 	Outbound map[string]any `json:"-"`
 }
 
@@ -106,14 +106,14 @@ func parseUserInfo(h http.Header) *UserInfo {
 	return ui
 }
 
-// decodeSubscription: base64 (любой вариант) или сразу текст со ссылками.
+// decodeSubscription: base64 (любой вариант) или сразу текст.
 func decodeSubscription(b []byte) string {
-	s := strings.TrimSpace(string(b))
-	if strings.Contains(s, "://") {
+	s := strings.TrimSpace(strings.TrimPrefix(string(b), "\ufeff"))
+	if strings.Contains(s, "://") || strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") || looksClash(s) {
 		return s
 	}
 	if d, ok := decodeB64(s); ok {
-		return d
+		return strings.TrimSpace(d)
 	}
 	return s
 }
@@ -141,24 +141,39 @@ type parseOpts struct {
 	maxNodes int
 }
 
-// parseSubscription разбирает текст подписки; возвращает узлы и список предупреждений.
-func parseSubscription(text string, o parseOpts) ([]Node, []string) {
+// entry — узел подписки до фильтрации: либо ссылка, либо готовый outbound (JSON Xray).
+type entry struct {
+	link string
+	node *Node
+	err  error
+	name string
+}
+
+// parseSubscription разбирает тело подписки любого поддерживаемого формата.
+func parseSubscription(body string, o parseOpts) ([]Node, []string) {
+	text := decodeSubscription([]byte(body))
+	entries, format, warns := expand(text, o.sockopt)
 	var nodes []Node
-	var warns []string
 	seen := map[string]bool{}
 	skippedInfo := 0
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
-			continue
+	for _, e := range entries {
+		var n Node
+		err := e.err
+		if err == nil && e.node != nil {
+			n = *e.node
+		} else if err == nil {
+			n, err = parseLink(e.link, o.sockopt)
 		}
-		n, err := parseLink(line, o.sockopt)
 		if err == errInfoNode {
 			skippedInfo++
 			continue
 		}
 		if err != nil {
-			warns = append(warns, fmt.Sprintf("пропущен узел (%v): %s", err, short(line)))
+			what := e.name
+			if what == "" {
+				what = short(e.link)
+			}
+			warns = append(warns, fmt.Sprintf("пропущен узел %s: %v", what, err))
 			continue
 		}
 		if o.exclude != nil && o.exclude.MatchString(n.Name) {
@@ -172,6 +187,9 @@ func parseSubscription(text string, o parseOpts) ([]Node, []string) {
 		}
 		seen[n.Tag] = true
 		n.Sub = o.sub
+		if n.Warn != "" {
+			warns = append(warns, fmt.Sprintf("%s: %s", n.Name, n.Warn))
+		}
 		nodes = append(nodes, n)
 		if o.maxNodes > 0 && len(nodes) >= o.maxNodes {
 			warns = append(warns, fmt.Sprintf("взяты первые %d узлов", o.maxNodes))
@@ -181,7 +199,37 @@ func parseSubscription(text string, o parseOpts) ([]Node, []string) {
 	if skippedInfo > 0 {
 		warns = append(warns, fmt.Sprintf("пропущено информационных записей (не серверов): %d", skippedInfo))
 	}
+	if format != "" && len(nodes) > 0 {
+		warns = append([]string{"формат подписки: " + format}, warns...)
+	}
 	return nodes, warns
+}
+
+// expand превращает текст подписки в список узлов.
+func expand(text string, sockopt any) ([]entry, string, []string) {
+	if strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
+		if es, format, err := fromJSON(text, sockopt); err == nil {
+			return es, format, nil
+		} else if !strings.Contains(text, "://") {
+			return nil, "", []string{"не удалось разобрать JSON: " + err.Error()}
+		}
+	}
+	if looksClash(text) {
+		es, err := fromClash(text)
+		if err != nil {
+			return nil, "", []string{"не удалось разобрать Clash YAML: " + err.Error()}
+		}
+		return es, "Clash/mihomo YAML", nil
+	}
+	var es []entry
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			continue
+		}
+		es = append(es, entry{link: line})
+	}
+	return es, "", nil
 }
 
 var errInfoNode = fmt.Errorf("информационная запись")
@@ -201,7 +249,7 @@ func short(s string) string {
 }
 
 func isInfoAddress(host string, port int) bool {
-	if port <= 1 || host == "" || host == "localhost" {
+	if port <= 1 || port > 65535 || host == "" || host == "localhost" {
 		return true
 	}
 	if ip := net.ParseIP(host); ip != nil {
@@ -216,24 +264,6 @@ func nodeTag(link string) string {
 	}
 	h := sha1.Sum([]byte(link))
 	return "node-" + hex.EncodeToString(h[:])[:8]
-}
-
-func parseLink(link string, sockopt any) (Node, error) {
-	scheme := strings.ToLower(link[:max(0, strings.Index(link, "://"))])
-	switch scheme {
-	case "vless":
-		return parseVless(link, sockopt)
-	case "trojan":
-		return parseTrojan(link, sockopt)
-	case "ss":
-		return parseSS(link, sockopt)
-	case "vmess":
-		return parseVmess(link, sockopt)
-	case "":
-		return Node{}, fmt.Errorf("не ссылка")
-	default:
-		return Node{}, fmt.Errorf("протокол %s не поддерживается", scheme)
-	}
 }
 
 func hostPort(u *url.URL) (string, int, error) {
@@ -252,6 +282,49 @@ func nameOf(u *url.URL, host string) string {
 	return host
 }
 
+// tlsSettings — общие параметры TLS из ссылки. Возвращает предупреждение, если что-то пришлось опустить.
+func tlsSettings(q url.Values, sni, defALPN string) (map[string]any, string) {
+	ts := map[string]any{}
+	var warn string
+	if sni != "" {
+		ts["serverName"] = sni
+	}
+	if fp := q.Get("fp"); fp != "" {
+		ts["fingerprint"] = strings.ToLower(fp)
+	}
+	alpn := q.Get("alpn")
+	if alpn == "" {
+		alpn = defALPN
+	}
+	if alpn != "" {
+		ts["alpn"] = strings.Split(alpn, ",")
+	}
+	pin := firstNonEmpty(q.Get("pcs"), q.Get("pinSHA256"), q.Get("pinsha256"))
+	if pin != "" {
+		ts["pinnedPeerCertSha256"] = pin
+	}
+	if v := q.Get("vcn"); v != "" {
+		ts["verifyPeerCertByName"] = v
+	}
+	if v := q.Get("ech"); v != "" {
+		ts["echConfigList"] = v
+	}
+	ins := strings.ToLower(firstNonEmpty(q.Get("allowInsecure"), q.Get("insecure")))
+	if (ins == "1" || ins == "true") && pin == "" {
+		warn = "ссылка просит не проверять сертификат (insecure), а Xray так больше не умеет — узел заработает, только если сертификат настоящий"
+	}
+	return ts, warn
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 // buildStream собирает streamSettings из параметров ссылки (общий формат vless/trojan/vmess).
 func buildStream(q url.Values, defSecurity string, sockopt any) (map[string]any, string, error) {
 	network := strings.ToLower(q.Get("type"))
@@ -260,12 +333,15 @@ func buildStream(q url.Values, defSecurity string, sockopt any) (map[string]any,
 		network = "tcp"
 	case "splithttp":
 		network = "xhttp"
-	case "ws", "grpc", "xhttp", "httpupgrade":
+	case "mkcp":
+		network = "kcp"
+	case "websocket":
+		network = "ws"
+	case "ws", "grpc", "xhttp", "httpupgrade", "kcp":
+	case "h2", "http", "quic":
+		return nil, "", fmt.Errorf("транспорт %s удалён из Xray", network)
 	default:
 		return nil, "", fmt.Errorf("транспорт %q не поддерживается", network)
-	}
-	if network == "tcp" && q.Get("headerType") != "" && q.Get("headerType") != "none" {
-		return nil, "", fmt.Errorf("tcp headerType=%s не поддерживается", q.Get("headerType"))
 	}
 
 	security := strings.ToLower(q.Get("security"))
@@ -273,20 +349,18 @@ func buildStream(q url.Values, defSecurity string, sockopt any) (map[string]any,
 		security = defSecurity
 	}
 	stream := map[string]any{"network": network, "security": security}
-	sni := q.Get("sni")
-	if sni == "" {
-		sni = q.Get("peer")
-	}
-	fp := q.Get("fp")
+	sni := firstNonEmpty(q.Get("sni"), q.Get("peer"))
+	var warn string
 	switch security {
 	case "reality":
 		if q.Get("pbk") == "" {
 			return nil, "", fmt.Errorf("reality без pbk")
 		}
+		fp := q.Get("fp")
 		if fp == "" {
 			fp = "chrome"
 		}
-		rs := map[string]any{"serverName": sni, "fingerprint": fp, "publicKey": q.Get("pbk"), "shortId": q.Get("sid")}
+		rs := map[string]any{"serverName": sni, "fingerprint": strings.ToLower(fp), "publicKey": q.Get("pbk"), "shortId": q.Get("sid")}
 		if v := q.Get("spx"); v != "" {
 			rs["spiderX"] = v
 		}
@@ -295,27 +369,32 @@ func buildStream(q url.Values, defSecurity string, sockopt any) (map[string]any,
 		}
 		stream["realitySettings"] = rs
 	case "tls":
-		ts := map[string]any{}
-		if sni != "" {
-			ts["serverName"] = sni
-		}
-		if fp != "" {
-			ts["fingerprint"] = fp
-		}
-		if v := q.Get("alpn"); v != "" {
-			ts["alpn"] = strings.Split(v, ",")
-		}
-		if q.Get("allowInsecure") == "1" || q.Get("insecure") == "1" || q.Get("allowInsecure") == "true" {
-			ts["allowInsecure"] = true
-		}
+		ts, w := tlsSettings(q, sni, "")
+		warn = w
 		stream["tlsSettings"] = ts
-	case "none":
+	case "none", "":
+		stream["security"] = "none"
 	default:
 		return nil, "", fmt.Errorf("security %q не поддерживается", security)
 	}
 
 	hostHdr, path := q.Get("host"), q.Get("path")
 	switch network {
+	case "tcp":
+		switch ht := q.Get("headerType"); ht {
+		case "", "none":
+		case "http":
+			req := map[string]any{}
+			if path != "" {
+				req["path"] = strings.Split(path, ",")
+			}
+			if hostHdr != "" {
+				req["headers"] = map[string]any{"Host": strings.Split(hostHdr, ",")}
+			}
+			stream["rawSettings"] = map[string]any{"header": map[string]any{"type": "http", "request": req}}
+		default:
+			return nil, "", fmt.Errorf("tcp headerType=%s не поддерживается", ht)
+		}
 	case "ws", "httpupgrade":
 		s := map[string]any{}
 		if path != "" {
@@ -326,10 +405,7 @@ func buildStream(q url.Values, defSecurity string, sockopt any) (map[string]any,
 		}
 		stream[network+"Settings"] = s
 	case "grpc":
-		sn := q.Get("serviceName")
-		if sn == "" {
-			sn = path
-		}
+		sn := firstNonEmpty(q.Get("serviceName"), path)
 		s := map[string]any{"serviceName": sn}
 		if q.Get("mode") == "multi" {
 			s["multiMode"] = true
@@ -351,218 +427,28 @@ func buildStream(q url.Values, defSecurity string, sockopt any) (map[string]any,
 		}
 		if v := q.Get("extra"); v != "" {
 			var extra any
-			if json.Unmarshal([]byte(v), &extra) == nil {
+			if jsonUnmarshal([]byte(v), &extra) == nil {
 				s["extra"] = extra
 			}
 		}
 		stream["xhttpSettings"] = s
+	case "kcp":
+		// Обфускация mKCP в современном Xray задаётся через finalmask.
+		mk := map[string]any{}
+		if seed := q.Get("seed"); seed != "" {
+			mk["value"] = seed
+		} else if ht := q.Get("headerType"); ht != "" && ht != "none" {
+			ht = strings.TrimSuffix(strings.ToLower(ht), "-video") // wechat-video → wechat
+			mk["header"] = ht
+			if ht == "dns" && hostHdr != "" {
+				mk["value"] = hostHdr
+			}
+		}
+		stream["kcpSettings"] = map[string]any{}
+		stream["finalmask"] = map[string]any{"udp": []any{map[string]any{"type": "mkcp-legacy", "settings": mk}}}
 	}
 	if sockopt != nil {
 		stream["sockopt"] = sockopt
 	}
-	return stream, network, nil
-}
-
-func parseVless(link string, sockopt any) (Node, error) {
-	u, err := url.Parse(link)
-	if err != nil {
-		return Node{}, err
-	}
-	host, port, err := hostPort(u)
-	if err != nil {
-		return Node{}, err
-	}
-	id := u.User.Username()
-	if id == "" || strings.Trim(id, "0-") == "" {
-		return Node{}, errInfoNode
-	}
-	q := u.Query()
-	stream, _, err := buildStream(q, "none", sockopt)
-	if err != nil {
-		return Node{}, err
-	}
-	enc := q.Get("encryption")
-	if enc == "" {
-		enc = "none"
-	}
-	user := map[string]any{"id": id, "encryption": enc}
-	if v := q.Get("flow"); v != "" {
-		user["flow"] = v
-	}
-	tag := nodeTag(link)
-	ob := map[string]any{
-		"tag":      tag,
-		"protocol": "vless",
-		"settings": map[string]any{
-			"vnext": []any{map[string]any{"address": host, "port": port, "users": []any{user}}},
-		},
-		"streamSettings": stream,
-	}
-	return Node{Tag: tag, Name: nameOf(u, host), Proto: "vless", Address: host, Port: port, Outbound: ob}, nil
-}
-
-func parseTrojan(link string, sockopt any) (Node, error) {
-	u, err := url.Parse(link)
-	if err != nil {
-		return Node{}, err
-	}
-	host, port, err := hostPort(u)
-	if err != nil {
-		return Node{}, err
-	}
-	pass := u.User.Username()
-	if pass == "" {
-		return Node{}, fmt.Errorf("нет пароля")
-	}
-	stream, _, err := buildStream(u.Query(), "tls", sockopt)
-	if err != nil {
-		return Node{}, err
-	}
-	tag := nodeTag(link)
-	ob := map[string]any{
-		"tag":            tag,
-		"protocol":       "trojan",
-		"settings":       map[string]any{"servers": []any{map[string]any{"address": host, "port": port, "password": pass}}},
-		"streamSettings": stream,
-	}
-	return Node{Tag: tag, Name: nameOf(u, host), Proto: "trojan", Address: host, Port: port, Outbound: ob}, nil
-}
-
-// parseSS понимает SIP002 (ss://base64(method:pass)@host:port#name),
-// открытый userinfo (ss://method:pass@host:port) и старый формат (ss://base64(method:pass@host:port)#name).
-func parseSS(link string, sockopt any) (Node, error) {
-	rest := link[len("ss://"):]
-	name := ""
-	if i := strings.Index(rest, "#"); i >= 0 {
-		name, _ = url.PathUnescape(rest[i+1:])
-		rest = rest[:i]
-	}
-	query := ""
-	if i := strings.Index(rest, "?"); i >= 0 {
-		query = rest[i+1:]
-		rest = rest[:i]
-	}
-	rest = strings.TrimSuffix(rest, "/")
-	if q, _ := url.ParseQuery(query); q.Get("plugin") != "" {
-		return Node{}, fmt.Errorf("плагин %s не поддерживается", strings.SplitN(q.Get("plugin"), ";", 2)[0])
-	}
-	var userinfo, hp string
-	if i := strings.LastIndex(rest, "@"); i >= 0 {
-		userinfo, hp = rest[:i], rest[i+1:]
-		if d, ok := decodeB64(userinfo); ok && strings.Contains(d, ":") {
-			userinfo = d
-		} else if un, err := url.PathUnescape(userinfo); err == nil {
-			userinfo = un
-		}
-	} else {
-		d, ok := decodeB64(rest)
-		if !ok {
-			return Node{}, fmt.Errorf("не удалось разобрать ss-ссылку")
-		}
-		i := strings.LastIndex(d, "@")
-		if i < 0 {
-			return Node{}, fmt.Errorf("не удалось разобрать ss-ссылку")
-		}
-		userinfo, hp = d[:i], d[i+1:]
-	}
-	mp := strings.SplitN(userinfo, ":", 2)
-	if len(mp) != 2 || mp[0] == "" {
-		return Node{}, fmt.Errorf("нет метода шифрования или пароля")
-	}
-	h, p, err := net.SplitHostPort(hp)
-	if err != nil {
-		return Node{}, err
-	}
-	port, _ := strconv.Atoi(p)
-	if isInfoAddress(h, port) {
-		return Node{}, errInfoNode
-	}
-	if name == "" {
-		name = h
-	}
-	stream := map[string]any{"network": "tcp", "security": "none"}
-	if sockopt != nil {
-		stream["sockopt"] = sockopt
-	}
-	tag := nodeTag(link)
-	ob := map[string]any{
-		"tag":      tag,
-		"protocol": "shadowsocks",
-		"settings": map[string]any{"servers": []any{map[string]any{
-			"address": h, "port": port, "method": strings.ToLower(mp[0]), "password": mp[1],
-		}}},
-		"streamSettings": stream,
-	}
-	return Node{Tag: tag, Name: strings.TrimSpace(name), Proto: "ss", Address: h, Port: port, Outbound: ob}, nil
-}
-
-// parseVmess — vmess://base64(JSON) в формате v2rayN.
-func parseVmess(link string, sockopt any) (Node, error) {
-	d, ok := decodeB64(link[len("vmess://"):])
-	if !ok {
-		return Node{}, fmt.Errorf("vmess: не base64")
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(d), &m); err != nil {
-		return Node{}, fmt.Errorf("vmess: %v", err)
-	}
-	str := func(k string) string {
-		switch v := m[k].(type) {
-		case string:
-			return strings.TrimSpace(v)
-		case float64:
-			return strconv.FormatFloat(v, 'f', -1, 64)
-		}
-		return ""
-	}
-	host := str("add")
-	port, _ := strconv.Atoi(str("port"))
-	if isInfoAddress(host, port) {
-		return Node{}, errInfoNode
-	}
-	id := str("id")
-	if id == "" || strings.Trim(id, "0-") == "" {
-		return Node{}, errInfoNode
-	}
-	if aid, _ := strconv.Atoi(str("aid")); aid > 0 {
-		return Node{}, fmt.Errorf("vmess с alterId>0 Xray больше не поддерживает")
-	}
-	q := url.Values{}
-	q.Set("type", str("net"))
-	q.Set("headerType", str("type"))
-	q.Set("host", str("host"))
-	q.Set("path", str("path"))
-	q.Set("security", str("tls"))
-	q.Set("sni", str("sni"))
-	q.Set("alpn", str("alpn"))
-	q.Set("fp", str("fp"))
-	if q.Get("type") == "grpc" {
-		q.Set("serviceName", str("path"))
-		if str("type") == "multi" {
-			q.Set("mode", "multi")
-		}
-		q.Del("headerType")
-	}
-	stream, _, err := buildStream(q, "none", sockopt)
-	if err != nil {
-		return Node{}, err
-	}
-	scy := str("scy")
-	if scy == "" {
-		scy = "auto"
-	}
-	name := str("ps")
-	if name == "" {
-		name = host
-	}
-	tag := nodeTag(link)
-	ob := map[string]any{
-		"tag":      tag,
-		"protocol": "vmess",
-		"settings": map[string]any{
-			"vnext": []any{map[string]any{"address": host, "port": port, "users": []any{map[string]any{"id": id, "security": scy}}}},
-		},
-		"streamSettings": stream,
-	}
-	return Node{Tag: tag, Name: name, Proto: "vmess", Address: host, Port: port, Outbound: ob}, nil
+	return stream, warn, nil
 }

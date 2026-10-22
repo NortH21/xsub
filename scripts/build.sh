@@ -16,7 +16,7 @@ VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null | sed 's/^v//' ||
 VERSION="${VERSION:-0.0.0}"
 OUT="${OUT:-dist}"
 REPO="${REPO:-furriest/xsub}"   # владелец/репозиторий на GitHub
-DESC="Подписки (vless/trojan/ss/vmess), списки доменов и сторож узлов для XKeen + Xray"
+DESC="Подписки (ссылки, Clash, sing-box, JSON Xray), списки доменов и сторож узлов для XKeen + Xray"
 
 # arch  GOARCH  GOMIPS     GOARM
 TARGETS=(

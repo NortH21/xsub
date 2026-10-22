@@ -67,7 +67,7 @@ input{background:var(--bg);color:var(--text);border:1px solid var(--line);border
     <button class="primary" id="ssave" onclick="saveSubs()">Сохранить подписки</button>
     <span id="smsg" class="muted"></span>
   </div>
-  <div class="muted" style="margin-top:8px">Фильтр — регулярное выражение по имени узла, например <code>(?i)Россия|Осталось</code>. Узлы с адресом 0.0.0.0/127.0.0.1 (информационные строки панелей) пропускаются сами.</div>
+  <div class="muted" style="margin-top:8px">Подходят ссылки vless/vmess/trojan/ss/hysteria2/wireguard/socks/http (списком или в base64), Clash/mihomo YAML, sing-box JSON и JSON Xray. Фильтр — регулярное выражение по имени узла, например <code>(?i)Россия|Осталось</code>. Информационные строки панелей пропускаются сами.</div>
 </section>
 
 <section>
@@ -135,7 +135,7 @@ async function load() {
   $('ver').textContent = s.version || '';
   $('sub').textContent = 'Geo-файлы: ' + when(s.geo_at) + ' · последняя удачная проверка: ' + when(s.last_ok) +
     (s.xray_up ? '' : ' · Xray не запущен!') + (s.managed ? '' : ' · конфиги Xray пока не тронуты (добавьте подписку)');
-  $('errs').textContent = [s.apply_err && 'Конфиг: ' + s.apply_err, s.geo_err && 'Geo: ' + s.geo_err].filter(Boolean).join('\n');
+  $('errs').textContent = [s.apply_err && 'Конфиг: ' + s.apply_err, s.geo_err && 'Geo: ' + s.geo_err].concat(s.bad_nodes || []).filter(Boolean).join('\n');
   lastSubs = s.subs || [];
   if (!subsDirty && !$('subs').contains(document.activeElement)) renderSubs();
   const now = Date.now();

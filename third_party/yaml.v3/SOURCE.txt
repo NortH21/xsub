@@ -1,0 +1,3 @@
+gopkg.in/yaml.v3 v3.0.1 (https://github.com/go-yaml/yaml, тег v3.0.1).
+Копия без тестов; go.mod сокращён (убрана тестовая зависимость gopkg.in/check.v1).
+Лицензии: LICENSE, NOTICE.

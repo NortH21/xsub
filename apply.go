@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -211,4 +212,110 @@ func writeAtomicMode(path string, b []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// testOutbounds проверяет через xray -test только набор outbound'ов узлов.
+func testOutbounds(c *Config, nodes []Node) error {
+	tmp, err := os.MkdirTemp("", "xsub-nodes-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	var obs []any
+	for _, n := range nodes {
+		obs = append(obs, n.Outbound)
+	}
+	b, err := marshal(map[string]any{"outbounds": obs})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "nodes.json"), b, 0o600); err != nil {
+		return err
+	}
+	return xrayTest(c, tmp)
+}
+
+// validateNodes отсеивает узлы, которые не принимает установленный Xray
+// (например, новый транспорт на старом ядре), чтобы один узел не ломал весь конфиг.
+func validateNodes(c *Config, nodes []Node) (good []Node, bad []string) {
+	if len(nodes) == 0 || testOutbounds(c, nodes) == nil {
+		return nodes, nil
+	}
+	for _, n := range nodes {
+		err := testOutbounds(c, []Node{n})
+		if err != nil {
+			// Для более старых версий Xray пробуем упрощённый вариант узла.
+			if alt, note, ok := legacyVariant(n); ok && testOutbounds(c, []Node{alt}) == nil {
+				lg.Printf("%s: %s", n.Name, note)
+				good = append(good, alt)
+				continue
+			}
+		}
+		if err != nil {
+			msg := err.Error()
+			if i := strings.LastIndex(msg, " > "); i >= 0 {
+				msg = msg[i+3:]
+			}
+			msg = strings.TrimSpace(strings.SplitN(msg, "\n", 2)[0])
+			bad = append(bad, fmt.Sprintf("%s: Xray не принял узел (%s)", n.Name, msg))
+			continue
+		}
+		good = append(good, n)
+	}
+	return good, bad
+}
+
+// legacyVariant переписывает узел под Xray до 26.10: без перебора портов (udphop)
+// и с прежними названиями масок mKCP (mkcp-original / mkcp-aes128gcm / header-*).
+func legacyVariant(n Node) (Node, string, bool) {
+	b, err := json.Marshal(n.Outbound)
+	if err != nil {
+		return n, "", false
+	}
+	var ob map[string]any
+	if json.Unmarshal(b, &ob) != nil {
+		return n, "", false
+	}
+	ss, _ := ob["streamSettings"].(map[string]any)
+	fm, _ := ss["finalmask"].(map[string]any)
+	udp, _ := fm["udp"].([]any)
+	if len(udp) == 0 {
+		return n, "", false
+	}
+	var out []any
+	var notes []string
+	changed := false
+	for _, m := range udp {
+		mm, _ := m.(map[string]any)
+		st, _ := mm["settings"].(map[string]any)
+		switch mm["type"] {
+		case "udphop":
+			changed = true
+			notes = append(notes, "эта версия Xray не умеет перебор портов — используется основной порт")
+		case "mkcp-legacy":
+			changed = true
+			switch {
+			case anyStr(st["header"]) != "":
+				out = append(out, map[string]any{"type": "header-" + anyStr(st["header"])})
+			case anyStr(st["value"]) != "":
+				out = append(out, map[string]any{"type": "mkcp-aes128gcm", "settings": map[string]any{"password": anyStr(st["value"])}})
+			default:
+				out = append(out, map[string]any{"type": "mkcp-original"})
+			}
+			notes = append(notes, "mKCP настроен в формате Xray до 26.10")
+		default:
+			out = append(out, m)
+		}
+	}
+	if !changed {
+		return n, "", false
+	}
+	if len(out) > 0 {
+		fm["udp"] = out
+	} else {
+		delete(ss, "finalmask")
+	}
+	n.Outbound = ob
+	n.Warn = strings.Join(notes, "; ")
+	return n, n.Warn, true
 }

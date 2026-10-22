@@ -36,6 +36,7 @@ type App struct {
 	geoAt    time.Time
 	geoErr   string
 	applyErr string
+	badNodes []string
 
 	kick chan struct{} // внеочередное обновление подписок
 }
@@ -63,7 +64,7 @@ func (a *App) parseSub(s Subscription, raw []byte, sockopt any, multi bool) ([]N
 	if s.Include != "" {
 		o.include, _ = regexp.Compile(s.Include)
 	}
-	nodes, warns := parseSubscription(decodeSubscription(raw), o)
+	nodes, warns := parseSubscription(string(raw), o)
 	if multi {
 		for i := range nodes {
 			nodes[i].Name = s.Name + " · " + nodes[i].Name
@@ -105,6 +106,14 @@ func (a *App) apply(nodes []Node, reason string, force bool) error {
 		a.w.setNodes(nil)
 		return nil
 	}
+	good, bad := validateNodes(a.c, nodes)
+	for _, b := range bad {
+		lg.Printf("%s", b)
+	}
+	a.mu.Lock()
+	a.badNodes = bad
+	a.mu.Unlock()
+	nodes = good
 	changed, err := applyConfig(a.c, nodes, reason)
 	a.mu.Lock()
 	if err != nil {
@@ -131,7 +140,13 @@ func (a *App) startup() {
 	defer opMu.Unlock()
 	a.updateGeoLocked(false)
 	nodes := a.collect(false)
-	_ = a.apply(nodes, "запуск", false)
+	a.mu.Lock()
+	haveSubs := len(a.subs) > 0
+	a.mu.Unlock()
+	// Сохранённых копий нет, а подписки есть — их сейчас скачает subLoop; лишний перезапуск Xray не нужен.
+	if len(nodes) > 0 || !haveSubs {
+		_ = a.apply(nodes, "запуск", false)
+	}
 	if len(nodes) > 0 {
 		a.w.mu.Lock()
 		active := a.w.active
@@ -418,6 +433,7 @@ type AppStatus struct {
 	GeoAt    time.Time      `json:"geo_at"`
 	GeoErr   string         `json:"geo_err"`
 	ApplyErr string         `json:"apply_err"`
+	BadNodes []string       `json:"bad_nodes"`
 	Managed  bool           `json:"managed"`
 	Log      []string       `json:"log"`
 }
@@ -434,6 +450,7 @@ func (a *App) status() AppStatus {
 		s.Subs = append(s.Subs, SubStatusOut{Subscription: sub, State: a.states[sub.URL]})
 	}
 	s.GeoAt, s.GeoErr, s.ApplyErr = a.geoAt, a.geoErr, a.applyErr
+	s.BadNodes = a.badNodes
 	a.mu.Unlock()
 	s.Log = lg.Tail(80)
 	return s

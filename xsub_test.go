@@ -17,11 +17,6 @@ const (
 	tPBK  = "4oPjFhCGYBbtVD2aCoA4x3EULVckDGWQYjvci2tp6Jo"
 )
 
-func vmessLink(m map[string]any) string {
-	b, _ := json.Marshal(m)
-	return "vmess://" + base64.StdEncoding.EncodeToString(b)
-}
-
 func sampleSub() string {
 	ssUser := base64.RawURLEncoding.EncodeToString([]byte("chacha20-ietf-poly1305:secret"))
 	ssLegacy := base64.StdEncoding.EncodeToString([]byte("aes-256-gcm:pw@ss2.example.com:8389"))
@@ -50,12 +45,12 @@ func TestParseSubscription(t *testing.T) {
 	for _, n := range nodes {
 		names = append(names, n.Proto+":"+n.Name)
 	}
-	want := []string{"vless:🇳🇱 Netherlands", "vless:Germany xhttp", "vless:WS", "trojan:Trojan gRPC", "ss:SS", "ss:SS legacy", "vmess:VMess WS"}
+	want := []string{"vless:🇳🇱 Netherlands", "vless:Germany xhttp", "vless:WS", "trojan:Trojan gRPC", "ss:SS", "ss:SS legacy", "vmess:VMess WS", "hysteria2:HY2"}
 	if strings.Join(names, "|") != strings.Join(want, "|") {
 		t.Fatalf("узлы:\n%v\nожидалось:\n%v\nпредупреждения: %v", names, want, warns)
 	}
 	joined := strings.Join(warns, "\n")
-	for _, w := range []string{"плагин obfs-local", "alterId", "hysteria2", "информационных записей (не серверов): 1"} {
+	for _, w := range []string{"плагин obfs-local", "alterId", "информационных записей (не серверов): 1"} {
 		if !strings.Contains(joined, w) {
 			t.Errorf("нет предупреждения %q в:\n%s", w, joined)
 		}
