@@ -1,0 +1,14 @@
+#!/bin/sh
+# Вызывается opkg перед удалением ("remove") и перед обновлением ("upgrade <версия>").
+[ -n "$IPKG_INSTROOT" ] && exit 0
+export PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+/opt/etc/init.d/S99xsub stop >/dev/null 2>&1
+
+if [ "$1" = "remove" ] && [ -x /opt/sbin/xsub ] && [ -f /opt/etc/xsub/config.json ]; then
+  if /opt/sbin/xsub -restore -config /opt/etc/xsub/config.json >/dev/null 2>&1; then
+    echo "xsub: конфиги Xray возвращены к состоянию до установки xsub."
+  fi
+  echo "xsub: настройки и списки остались в /opt/etc/xsub — удалите папку, если они не нужны."
+fi
+exit 0

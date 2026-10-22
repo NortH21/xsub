@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Тесты
+        run: go vet ./... && go test ./...
+
+      - name: Сборка пакетов
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then export VERSION="${GITHUB_REF_NAME#v}"; fi
+          scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Релиз на GitHub
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/xsub_*.ipk
+            dist/xsub-*-*
+            dist/install.sh
+            dist/SHA256SUMS
+          generate_release_notes: true
+
+      - name: Репозиторий opkg для GitHub Pages
+        if: github.ref_type == 'tag'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/repo
+
+  pages:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

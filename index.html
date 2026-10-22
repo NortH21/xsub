@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xsub</title>
+<style>
+:root{--bg:#0f1419;--panel:#171d24;--line:#26303b;--text:#d8dee6;--muted:#8a96a3;--ok:#4caf7a;--bad:#e05d5d;--warn:#d9a441;--acc:#4a9eda}
+@media (prefers-color-scheme: light){:root{--bg:#f4f6f8;--panel:#fff;--line:#dde2e8;--text:#1d2329;--muted:#5f6b77;--ok:#2e8b57;--bad:#c63b3b;--warn:#a87410;--acc:#1f6fb2}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 12px}
+h2{font-size:15px;margin:0 0 10px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.grow{flex:1 1 260px}
+button{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px;font:inherit;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.5;cursor:wait}
+.muted{color:var(--muted)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.big{font-size:17px;font-weight:600}
+.err{white-space:pre-wrap;color:var(--bad);margin-top:8px}
+table{width:100%;border-collapse:collapse}
+td,th{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:500}
+tr.active td{background:color-mix(in srgb,var(--acc) 12%,transparent)}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button.on{border-color:var(--acc);color:var(--acc)}
+textarea{width:100%;min-height:340px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:10px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}
+pre{margin:0;max-height:300px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+.scroll{overflow-x:auto}
+#msg{min-height:1.4em}
+input{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;min-width:0}
+.sub{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.sub .row input{flex:1 1 220px}
+.sub .row input.n{flex:1 1 140px;max-width:220px}
+</style>
+</head>
+<body>
+<main>
+<h1>xsub <span class="muted" id="ver" style="font-size:13px;font-weight:400"></span></h1>
+
+<section>
+  <div class="row">
+    <div class="grow">
+      <div class="muted">Сейчас трафик VPN идёт через</div>
+      <div class="big" id="active">—</div>
+      <div class="muted" id="sub"></div>
+    </div>
+    <button onclick="act('/api/auto','Ищу рабочий узел…')">Автовыбор</button>
+    <button onclick="act('/api/check','Проверяю задержку…')">Проверить узлы</button>
+    <button onclick="act('/api/sub/refresh','Обновляю подписки…')">Обновить подписки</button>
+    <button onclick="act('/api/geo/refresh','Обновляю geo-файлы…')">Обновить geo</button>
+  </div>
+  <div id="msg" class="muted"></div>
+  <div id="errs" class="err"></div>
+</section>
+
+<section>
+  <h2>Подписки</h2>
+  <div id="subs"></div>
+  <div class="row" style="margin-top:8px">
+    <button onclick="addSub()">+ Добавить подписку</button>
+    <button class="primary" id="ssave" onclick="saveSubs()">Сохранить подписки</button>
+    <span id="smsg" class="muted"></span>
+  </div>
+  <div class="muted" style="margin-top:8px">Фильтр — регулярное выражение по имени узла, например <code>(?i)Россия|Осталось</code>. Узлы с адресом 0.0.0.0/127.0.0.1 (информационные строки панелей) пропускаются сами.</div>
+</section>
+
+<section>
+  <h2>Узлы</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Узел</th><th>Задержка</th><th>Состояние</th><th></th></tr></thead>
+    <tbody id="nodes"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="tabs">
+    <button id="t-vpn" class="on" onclick="tab('vpn')">Через VPN</button>
+    <button id="t-direct" onclick="tab('direct')">Напрямую</button>
+  </div>
+  <div class="muted" style="margin-bottom:8px">Одна запись на строку: <code>example.com</code> — с поддоменами, <code>=example.com</code> — только он, <code>geosite:…</code>, <code>ext:файл.dat:…</code>, IP или подсеть. «Напрямую» проверяется раньше «Через VPN».</div>
+  <textarea id="list" spellcheck="false"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button class="primary" id="save" onclick="save()">Сохранить и применить</button>
+    <span id="lmsg" class="muted"></span>
+  </div>
+</section>
+
+<section>
+  <h2>Журнал</h2>
+  <pre id="log"></pre>
+</section>
+</main>
+
+<script>
+let cur = 'vpn', lists = {}, dirty = false, subs = [], subsDirty = false, lastSubs = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const when = t => (!t || t.startsWith('0001')) ? 'никогда' : new Date(t).toLocaleString('ru-RU');
+
+async function post(url, body) {
+  const r = await fetch(url, {method:'POST', headers:{'X-XSub':'1'}, body});
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+async function act(url, text) {
+  document.querySelectorAll('section:first-of-type button').forEach(b => b.disabled = true);
+  $('msg').textContent = text;
+  try { await post(url); $('msg').textContent = 'Готово.'; }
+  catch (e) { $('msg').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+  document.querySelectorAll('section:first-of-type button').forEach(b => b.disabled = false);
+  load();
+}
+
+async function pick(tag) {
+  $('msg').textContent = 'Переключаю…';
+  try { await post('/api/select', JSON.stringify({Tag: tag})); $('msg').textContent = 'Узел закреплён вручную.'; }
+  catch (e) { $('msg').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+  load();
+}
+
+async function load() {
+  let s;
+  try { s = await (await fetch('/api/status')).json(); } catch (e) { $('active').textContent = 'нет связи с xsub'; return; }
+  $('active').innerHTML = s.active
+    ? esc(s.active_name) + (s.pinned ? ' <span class="warn">(вручную)</span>' : '')
+    : (s.nodes && s.nodes.length ? '<span class="warn">узел не выбран — автовыбор Xray</span>' : '<span class="muted">нет узлов</span>');
+  $('ver').textContent = s.version || '';
+  $('sub').textContent = 'Geo-файлы: ' + when(s.geo_at) + ' · последняя удачная проверка: ' + when(s.last_ok) +
+    (s.xray_up ? '' : ' · Xray не запущен!') + (s.managed ? '' : ' · конфиги Xray пока не тронуты (добавьте подписку)');
+  $('errs').textContent = [s.apply_err && 'Конфиг: ' + s.apply_err, s.geo_err && 'Geo: ' + s.geo_err].filter(Boolean).join('\n');
+  lastSubs = s.subs || [];
+  if (!subsDirty && !$('subs').contains(document.activeElement)) renderSubs();
+  const now = Date.now();
+  $('nodes').innerHTML = (s.nodes || []).map(n => {
+    const bad = n.bad_until && new Date(n.bad_until).getTime() > now;
+    const lat = n.latency_ms > 0 ? n.latency_ms + ' мс' : (n.latency_ms < 0 ? '<span class="bad">нет</span>' : '<span class="muted">—</span>');
+    const st = bad ? '<span class="bad">исключён до ' + new Date(n.bad_until).toLocaleTimeString('ru-RU') + '</span>'
+      : n.tag === s.active ? '<span class="ok">активен</span>' : '';
+    const err = n.last_err ? '<div class="muted">' + esc(n.last_err) + '</div>' : '';
+    return '<tr class="' + (n.tag === s.active ? 'active' : '') + '"><td>' + esc(n.name) + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
+      '</td><td>' + st + err + '</td><td>' + (n.tag === s.active ? '' : '<button onclick="pick(\'' + esc(n.tag) + '\')">Выбрать</button>') + '</td></tr>';
+  }).join('') || '<tr><td colspan="4" class="muted">Узлов пока нет — добавьте подписку.</td></tr>';
+  $('log').textContent = (s.log || []).slice().reverse().join('\n');
+}
+
+const gb = n => (n / 1073741824).toFixed(n < 10737418240 ? 2 : 1);
+function subState(st) {
+  if (!st) return '<span class="muted">ещё не обновлялась</span>';
+  let parts = ['узлов: ' + st.nodes, 'обновлена: ' + when(st.at) + (st.cached ? ' (сохранённая копия)' : '')];
+  if (st.info) {
+    const used = st.info.upload + st.info.download;
+    parts.push('трафик: ' + gb(used) + (st.info.total ? ' из ' + gb(st.info.total) : '') + ' ГБ');
+    if (st.info.expire) parts.push('до ' + new Date(st.info.expire * 1000).toLocaleDateString('ru-RU'));
+  }
+  let h = '<span class="muted">' + parts.map(esc).join(' · ') + '</span>';
+  if (st.err) h += '<div class="bad">' + esc(st.err) + '</div>';
+  (st.warns || []).forEach(w => h += '<div class="muted">' + esc(w) + '</div>');
+  return h;
+}
+function renderSubs() {
+  $('subs').innerHTML = subs.map((s, i) => {
+    const st = (lastSubs.find(x => x.url === s.url) || {}).state;
+    return '<div class="sub"><div class="row">' +
+      '<input class="n" placeholder="Название" value="' + esc(s.name) + '" oninput="subs[' + i + '].name=this.value;subsDirty=true">' +
+      '<input placeholder="https://… ссылка на подписку" value="' + esc(s.url) + '" oninput="subs[' + i + '].url=this.value;subsDirty=true">' +
+      '<button onclick="subs.splice(' + i + ',1);subsDirty=true;renderSubs()">Удалить</button></div>' +
+      '<div class="row" style="margin-top:6px"><input placeholder="Исключить узлы (регулярное выражение)" value="' + esc(s.exclude || '') + '" oninput="subs[' + i + '].exclude=this.value;subsDirty=true">' +
+      '<input placeholder="Только узлы (необязательно)" value="' + esc(s.include || '') + '" oninput="subs[' + i + '].include=this.value;subsDirty=true">' +
+      '<input class="n" placeholder="User-Agent (необяз.)" value="' + esc(s.user_agent || '') + '" oninput="subs[' + i + '].user_agent=this.value;subsDirty=true"></div>' +
+      '<div style="margin-top:6px">' + subState(st) + '</div></div>';
+  }).join('') || '<div class="muted">Подписок пока нет — добавьте ссылку.</div>';
+}
+function addSub() { subs.push({name: '', url: ''}); subsDirty = true; renderSubs(); }
+async function saveSubs() {
+  $('ssave').disabled = true; $('smsg').className = 'muted'; $('smsg').textContent = 'Сохраняю…';
+  try {
+    await post('/api/subs', JSON.stringify(subs.filter(s => s.url.trim() !== '')));
+    subsDirty = false; $('smsg').className = 'ok'; $('smsg').textContent = 'Сохранено, обновляю подписки…';
+    subs = await (await fetch('/api/subs')).json(); renderSubs();
+  } catch (e) { $('smsg').className = 'bad'; $('smsg').textContent = e.message; }
+  $('ssave').disabled = false; setTimeout(load, 3000);
+}
+
+async function loadList(name) {
+  lists[name] = await (await fetch('/api/list?name=' + name)).text();
+}
+function tab(name) {
+  if (dirty && !confirm('Есть несохранённые изменения. Переключиться без сохранения?')) return;
+  cur = name; dirty = false;
+  $('t-vpn').classList.toggle('on', name === 'vpn');
+  $('t-direct').classList.toggle('on', name === 'direct');
+  $('list').value = lists[name] || ''; $('lmsg').textContent = '';
+}
+$('list').addEventListener('input', () => dirty = true);
+
+async function save() {
+  $('save').disabled = true; $('lmsg').className = 'muted'; $('lmsg').textContent = 'Проверяю и применяю…';
+  try {
+    await post('/api/list?name=' + cur, $('list').value);
+    lists[cur] = $('list').value; dirty = false;
+    $('lmsg').className = 'ok'; $('lmsg').textContent = 'Применено.';
+  } catch (e) { $('lmsg').className = 'bad'; $('lmsg').textContent = e.message; }
+  $('save').disabled = false; load();
+}
+
+(async () => {
+  await Promise.all([loadList('vpn'), loadList('direct')]);
+  subs = await (await fetch('/api/subs')).json() || [];
+  tab('vpn'); load(); setInterval(load, 10000);
+})();
+</script>
+</body>
+</html>

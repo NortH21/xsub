@@ -1,0 +1,54 @@
+#!/bin/sh
+# xsub — подписки, списки и сторож для XKeen + Xray.
+
+export PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BIN=/opt/sbin/xsub
+CONF=/opt/etc/xsub/config.json
+PIDFILE=/var/run/xsub.pid
+OUT=/opt/var/log/xsub.out
+
+running() {
+  [ -f "$PIDFILE" ] || return 1
+  pid=$(cat "$PIDFILE" 2>/dev/null)
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && \
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "$BIN"
+}
+
+case "$1" in
+  start)
+    running && { echo "xsub уже запущен"; exit 0; }
+    [ -x "$BIN" ] || { echo "нет $BIN"; exit 1; }
+    [ -f "$CONF" ] || "$BIN" -init -config "$CONF"
+    mkdir -p "$(dirname "$OUT")" "$(dirname "$PIDFILE")"
+    "$BIN" -config "$CONF" >"$OUT" 2>&1 &
+    echo $! > "$PIDFILE"
+    sleep 1
+    if running; then
+      echo "xsub запущен"
+    else
+      echo "xsub не запустился:"
+      cat "$OUT"
+      exit 1
+    fi
+    ;;
+  stop)
+    if running; then
+      kill "$(cat "$PIDFILE")"
+      sleep 1
+      running && kill -9 "$(cat "$PIDFILE")"
+    fi
+    rm -f "$PIDFILE"
+    echo "xsub остановлен"
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+  status)
+    if running; then echo "xsub работает (PID $(cat "$PIDFILE"))"; else echo "xsub не запущен"; exit 1; fi
+    ;;
+  *)
+    echo "Использование: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
+esac

@@ -1,0 +1,34 @@
+#!/bin/sh
+# Вызывается opkg после установки и обновления.
+[ -n "$IPKG_INSTROOT" ] && exit 0
+export PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+CONF=/opt/etc/xsub/config.json
+mkdir -p /opt/var/log
+
+FIRST=0
+if [ ! -f "$CONF" ]; then
+  FIRST=1
+  /opt/sbin/xsub -init -config "$CONF" > /tmp/xsub-init.txt 2>&1
+fi
+
+if [ ! -x /opt/sbin/xray ]; then
+  echo "xsub: не найден /opt/sbin/xray — установите XKeen с ядром Xray (xkeen -xray)."
+fi
+
+/opt/etc/init.d/S99xsub restart >/dev/null 2>&1
+
+IP=$(ip -4 addr show br0 2>/dev/null | awk '/inet /{split($2,a,"/"); print a[1]; exit}')
+[ -n "$IP" ] || IP="<IP-роутера>"
+
+echo
+if [ "$FIRST" = 1 ]; then
+  echo "xsub установлен."
+  echo "  Веб-страница: http://$IP:8099/"
+  grep -E '^(Логин|Пароль)' /tmp/xsub-init.txt | sed 's/^/  /'
+  echo "  Откройте страницу и добавьте ссылку на подписку."
+  rm -f /tmp/xsub-init.txt
+else
+  echo "xsub обновлён: $(/opt/sbin/xsub -version). Веб-страница: http://$IP:8099/"
+fi
+exit 0
