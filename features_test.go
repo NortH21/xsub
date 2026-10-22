@@ -231,3 +231,46 @@ func TestGeoSiteParse(t *testing.T) {
 		t.Error("несуществующая категория должна давать ошибку")
 	}
 }
+
+func TestBackgroundSchedule(t *testing.T) {
+	if q := bgQuota(30, time.Minute, 30*time.Minute); q != 1 {
+		t.Errorf("30 узлов за 30 мин при тике 1 мин: %d", q)
+	}
+	if q := bgQuota(90, time.Minute, 30*time.Minute); q != 3 {
+		t.Errorf("90 узлов: %d", q)
+	}
+	if q := bgQuota(3, 15*time.Second, 1440*time.Minute); q != 1 {
+		t.Errorf("минимум один: %d", q)
+	}
+	now := time.Now()
+	mk := func(tag string, ago time.Duration) *NodeState {
+		st := newStats()
+		if ago > 0 {
+			st.LastTest = now.Add(-ago)
+		}
+		return &NodeState{Node: Node{Tag: tag}, Stats: st}
+	}
+	nodes := []*NodeState{mk("a", 0), mk("fresh", 5*time.Minute), mk("old", 40*time.Minute), mk("active", 0), mk("older", 50*time.Minute)}
+	due := pickDue(nodes, map[string]bool{"active": true}, now, 30*time.Minute, time.Minute)
+	if len(due) != 1 || due[0].Tag != "a" {
+		t.Fatalf("первым должен идти ни разу не проверенный: %v", due)
+	}
+	due = pickDue(nodes, map[string]bool{"active": true}, now, 10*time.Minute, time.Minute)
+	var tags []string
+	for _, n := range due {
+		tags = append(tags, n.Tag)
+	}
+	// 4 запасных за 10 мин при тике 1 мин → квота 1
+	if strings.Join(tags, ",") != "a" {
+		t.Fatalf("%v", tags)
+	}
+	due = pickDue(nodes[1:], map[string]bool{"active": true}, now, 2*time.Minute, time.Minute)
+	tags = nil
+	for _, n := range due {
+		tags = append(tags, n.Tag)
+	}
+	// квота 2: самые давние первыми, «fresh» (5 мин) тоже просрочен при цикле 2 мин
+	if strings.Join(tags, ",") != "older,old" {
+		t.Fatalf("%v", tags)
+	}
+}

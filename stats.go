@@ -25,6 +25,7 @@ type NodeStats struct {
 	Fail     int       `json:"fail"`
 	LastOK   time.Time `json:"last_ok"`
 	LastFail time.Time `json:"last_fail"`
+	LastTest time.Time `json:"last_test"` // последняя проверка загрузкой (любая)
 	Slots    []Slot    `json:"slots"`
 }
 
@@ -33,6 +34,7 @@ const unknownScore = 0.75
 func newStats() *NodeStats { return &NodeStats{Score: unknownScore} }
 
 func (s *NodeStats) record(ok bool, now time.Time) {
+	s.LastTest = now
 	if ok {
 		s.OK++
 		s.LastOK = now

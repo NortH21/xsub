@@ -166,7 +166,7 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <label class="check"><input type="checkbox" id="s_w_enabled"><span data-i18n="sWEnabled"></span></label>
       <label><span data-i18n="sWInterval"></span><input id="s_w_interval_sec" type="number" min="15" max="3600"></label>
       <label><span data-i18n="sWFails"></span><input id="s_w_fails_to_switch" type="number" min="1" max="10"></label>
-      <label><span data-i18n="sWBg"></span><input id="s_w_background_probe_min" type="number" min="0" max="1440"></label>
+      <label><span data-i18n="sWBg"></span><input id="s_w_background_cycle_min" type="number" min="0" max="1440"></label>
       <label class="check"><input type="checkbox" id="s_w_restart_xray"><span data-i18n="sWRestart"></span></label>
       <label style="flex-basis:100%"><span data-i18n="sWUrls"></span><textarea id="s_w_check_urls" style="min-height:70px"></textarea></label>
     </div>
@@ -235,15 +235,15 @@ ru: {
   subsHint:'Подходят ссылки vless/vmess/trojan/ss/hysteria2/wireguard/socks/http (списком или в base64), Clash/mihomo YAML, sing-box JSON и JSON Xray. Фильтр — регулярное выражение по имени узла, например (?i)Россия|Осталось. Информационные строки панелей пропускаются сами.',
   phName:'Название', phUrl:'https://… ссылка на подписку', phEx:'Исключить узлы (регулярное выражение)', phIn:'Только узлы (необязательно)', phUA:'User-Agent (необяз.)',
   del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
-  thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'активен', badUntil:'исключён до', select:'Выбрать', for:'для',
-  nodesHint:'Надёжность — доля удачных проверок загрузкой (активный узел проверяется каждую минуту, запасные — по очереди в фоне). При сбое сначала выбираются надёжные узлы, потом быстрые.',
+  lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'активен', badUntil:'исключён до', select:'Выбрать', for:'для',
+  nodesHint:'Надёжность — доля удачных проверок загрузкой: активный узел проверяется при каждой проверке сторожа, каждый запасной — в фоне раз в N минут (задаётся в настройках). При сбое сначала выбираются надёжные узлы, потом быстрые.',
   listVPN:'Через VPN', listDirect:'Напрямую', saveApply:'Сохранить и применить', applying:'Проверяю и применяю…', applied:'Применено.', unsaved:'Есть несохранённые изменения. Переключиться без сохранения?',
   listHint:'Одна запись на строку: example.com — с поддоменами, =example.com — только он, geosite:…, ext:файл.dat:…, IP или подсеть. Строка-ссылка https://… подключает внешний список (обновляется раз в сутки). Порядок: «Напрямую», затем группы, затем «Через VPN»; остальное — напрямую.',
   groups:'Группы', groupsHint:'Группа отправляет свой список через свою часть узлов, например «YouTube через Нидерланды». Фильтр — регулярное выражение по имени узла. Если подходящих узлов нет, трафик группы идёт основной целью. Список группы редактируется во вкладке выше.',
   addGroup:'+ Добавить группу', saveGroups:'Сохранить группы', phGName:'Название группы', phGFilter:'Фильтр узлов, например (?i)нидерланд|NL', matched:'подходящих узлов', noGroups:'Групп нет.',
   routeTitle:'Куда пойдёт этот сайт?', routePh:'домен, ссылка или IP-адрес', routeBtn:'Проверить', rList:'Список', rRule:'Правило', rVia:'Сейчас через',
   setMain:'Подписки и узлы', sInterval:'Обновлять подписки, часов', sUA:'User-Agent по умолчанию', sMax:'Узлов из одной подписки', sFallback:'Запасной outbound (если все узлы не работают)', none:'— нет —',
-  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки, секунд', sWFails:'Неудач подряд до переключения', sWBg:'Фоновая проверка запасных узлов, раз в N минут (0 — выкл.)', sWRestart:'Перезапускать XKeen, если Xray упал (не трогает, если запущен mihomo)', sWUrls:'Дополнительные адреса, которые должны открываться через узел (по одному в строке)',
+  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки, секунд', sWFails:'Неудач подряд до переключения', sWBg:'Проверять каждый запасной узел раз в N минут (0 — выкл.)', sWRestart:'Перезапускать XKeen, если Xray упал (не трогает, если запущен mihomo)', sWUrls:'Дополнительные адреса, которые должны открываться через узел (по одному в строке)',
   sTgToken:'Токен бота', sTgDays:'Предупреждать за N дней до конца подписки', sTgPct:'…и при израсходовании % трафика', sTgSwitch:'Сообщать о каждом переключении узла', sTgUpdate:'Сообщать о новой версии xsub', sTgTest:'Отправить проверочное сообщение',
   sTgHint:'Создайте бота у @BotFather и напишите ему что-нибудь; chat_id можно узнать у @userinfobot. Если Telegram недоступен напрямую, сообщения уходят через VPN.',
   setAccess:'Доступ и журнал', sPass:'Новый пароль (пусто — не менять)', sLog:'Журнал', logTmp:'в оперативной памяти (/tmp)', logMem:'только на этой странице', logDisk:'на накопителе (/opt/var/log)', sWan:'Пускать на страницу не только из домашней сети',
@@ -264,15 +264,15 @@ en: {
   subsHint:'Supported: vless/vmess/trojan/ss/hysteria2/wireguard/socks/http links (plain or base64), Clash/mihomo YAML, sing-box JSON and Xray JSON. The filter is a regular expression on node names, e.g. (?i)Russia|Remaining. Info entries from panels are skipped automatically.',
   phName:'Name', phUrl:'https://… subscription link', phEx:'Exclude nodes (regular expression)', phIn:'Only nodes (optional)', phUA:'User-Agent (optional)',
   del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
-  thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'active', badUntil:'excluded until', select:'Select', for:'for',
-  nodesHint:'Reliability is the share of successful download checks (the active node is checked every minute, spare nodes one by one in the background). On failure reliable nodes are tried first, then fast ones.',
+  lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'active', badUntil:'excluded until', select:'Select', for:'for',
+  nodesHint:'Reliability is the share of successful download checks: the active node is checked on every watchdog run, each spare node in the background once per N minutes (see Settings). On failure reliable nodes are tried first, then fast ones.',
   listVPN:'Via VPN', listDirect:'Direct', saveApply:'Save and apply', applying:'Checking and applying…', applied:'Applied.', unsaved:'You have unsaved changes. Switch anyway?',
   listHint:'One entry per line: example.com — with subdomains, =example.com — exact, geosite:…, ext:file.dat:…, IP or subnet. A line with an https://… link adds a remote list (updated daily). Order: Direct, then groups, then Via VPN; everything else goes direct.',
   groups:'Groups', groupsHint:'A group sends its own list through its own subset of nodes, e.g. "YouTube via Netherlands". The filter is a regular expression on node names. If no nodes match, the group uses the main target. Edit the group list in the tab above.',
   addGroup:'+ Add group', saveGroups:'Save groups', phGName:'Group name', phGFilter:'Node filter, e.g. (?i)netherlands|NL', matched:'matching nodes', noGroups:'No groups.',
   routeTitle:'Where will this site go?', routePh:'domain, link or IP address', routeBtn:'Check', rList:'List', rRule:'Rule', rVia:'Currently via',
   setMain:'Subscriptions and nodes', sInterval:'Update subscriptions every N hours', sUA:'Default User-Agent', sMax:'Nodes per subscription', sFallback:'Fallback outbound (if all nodes fail)', none:'— none —',
-  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval, seconds', sWFails:'Failures in a row before switching', sWBg:'Background check of spare nodes, every N minutes (0 — off)', sWRestart:'Restart XKeen if Xray crashed (skipped when mihomo runs)', sWUrls:'Extra addresses that must open through the node (one per line)',
+  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval, seconds', sWFails:'Failures in a row before switching', sWBg:'Check every spare node once per N minutes (0 — off)', sWRestart:'Restart XKeen if Xray crashed (skipped when mihomo runs)', sWUrls:'Extra addresses that must open through the node (one per line)',
   sTgToken:'Bot token', sTgDays:'Warn N days before the subscription ends', sTgPct:'…and when % of traffic is used', sTgSwitch:'Notify about every node switch', sTgUpdate:'Notify about new xsub versions', sTgTest:'Send a test message',
   sTgHint:'Create a bot with @BotFather and send it any message; get your chat_id from @userinfobot. If Telegram is blocked, messages go through the VPN.',
   setAccess:'Access and log', sPass:'New password (empty — keep)', sLog:'Log', logTmp:'in RAM (/tmp)', logMem:'on this page only', logDisk:'on storage (/opt/var/log)', sWan:'Allow access from outside the home network',
@@ -287,6 +287,11 @@ const t = k => (I18N[lang] && I18N[lang][k]) || I18N.ru[k] || k;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const loc = () => lang === 'ru' ? 'ru-RU' : 'en-GB';
+const ago = x => {
+  if (!x || x.startsWith('0001')) return t('never');
+  const m = Math.floor((Date.now() - new Date(x).getTime()) / 60000);
+  return m < 1 ? t('justNow') : m < 120 ? m + ' ' + t('agoMin') : Math.floor(m / 60) + ' ' + t('agoH');
+};
 const when = x => (!x || x.startsWith('0001')) ? t('never') : new Date(x).toLocaleString(loc());
 const TABS = ['overview','subs','nodes','lists','route','settings','log'];
 const TABKEY = {overview:'tabOverview',subs:'tabSubs',nodes:'tabNodes',lists:'tabLists',route:'tabRoute',settings:'tabSettings',log:'tabLog'};
@@ -377,7 +382,8 @@ function render() {
     const lat = n.latency_ms > 0 ? n.latency_ms + ' ms' : (n.latency_ms < 0 ? '<span class="bad">—</span>' : '<span class="muted">·</span>');
     const st = n.stats || {};
     const tot = (st.ok || 0) + (st.fail || 0);
-    const rel = tot ? '<span class="' + (st.score >= 0.9 ? 'ok' : st.score >= 0.6 ? 'warn' : 'bad') + '">' + Math.round(st.score * 100) + '%</span> <span class="muted">(' + st.ok + '/' + tot + ')</span>' + strip(st.slots) : '<span class="muted">·</span>';
+    const rel = tot ? '<span class="' + (st.score >= 0.9 ? 'ok' : st.score >= 0.6 ? 'warn' : 'bad') + '">' + Math.round(st.score * 100) + '%</span> <span class="muted">(' + st.ok + '/' + tot + ')</span>' + strip(st.slots) +
+      '<div class="muted">' + t('lastTest') + ': ' + ago(st.last_test) + '</div>' : '<span class="muted">·</span>';
     let state = activeIn.map(tg => '<span class="ok">' + t('active') + (ts.length > 1 ? ' — ' + esc(tgName(tg)) : '') + '</span>').join('<br>');
     if (bad) state += (state ? '<br>' : '') + '<span class="bad">' + t('badUntil') + ' ' + new Date(n.bad_until).toLocaleTimeString(loc()) + '</span>';
     if (n.last_err) state += '<div class="muted">' + esc(n.last_err) + '</div>';
@@ -538,7 +544,7 @@ async function loadSettings() {
   $('s_fallback_tag').innerHTML = '<option value="">' + esc(t('none')) + '</option>' + (SET.outbounds || []).sort().map(o => '<option>' + esc(o) + '</option>').join('');
   v('s_fallback_tag', s.xray.fallback_tag);
   c('s_w_enabled', w.enabled); v('s_w_interval_sec', w.interval_sec); v('s_w_fails_to_switch', w.fails_to_switch);
-  v('s_w_background_probe_min', w.background_probe_min); c('s_w_restart_xray', w.restart_xray); v('s_w_check_urls', (w.check_urls || []).join('\n'));
+  v('s_w_background_cycle_min', w.background_cycle_min); c('s_w_restart_xray', w.restart_xray); v('s_w_check_urls', (w.check_urls || []).join('\n'));
   v('s_tg_token', tg.token); v('s_tg_chat_id', tg.chat_id); v('s_tg_expire_days', tg.expire_days); v('s_tg_traffic_pct', tg.traffic_pct);
   c('s_tg_on_switch', tg.on_switch); c('s_tg_on_update', tg.on_update);
   v('s_password', ''); c('s_ui_allow_wan', s.ui_allow_wan);
@@ -551,7 +557,7 @@ function collectSettings() {
     password: v('s_password'), sub_interval_hours: n('s_sub_interval_hours'), user_agent: v('s_user_agent'), max_nodes: n('s_max_nodes'),
     log_file: v('s_log_file'), ui_allow_wan: c('s_ui_allow_wan'), xray: {fallback_tag: v('s_fallback_tag')},
     watchdog: {enabled: c('s_w_enabled'), interval_sec: n('s_w_interval_sec'), fails_to_switch: n('s_w_fails_to_switch'),
-      background_probe_min: n('s_w_background_probe_min'), restart_xray: c('s_w_restart_xray'),
+      background_cycle_min: n('s_w_background_cycle_min'), restart_xray: c('s_w_restart_xray'),
       check_urls: v('s_w_check_urls').split('\n').map(x => x.trim()).filter(Boolean)},
     telegram: {token: v('s_tg_token'), chat_id: v('s_tg_chat_id'), expire_days: n('s_tg_expire_days'), traffic_pct: n('s_tg_traffic_pct'),
       on_switch: c('s_tg_on_switch'), on_update: c('s_tg_on_update')}

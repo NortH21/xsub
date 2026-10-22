@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -54,8 +55,6 @@ type Watcher struct {
 	targets   []*Target
 	stats     map[string]*NodeStats // переживает обновление подписки
 	xrayStart string
-	bgIdx     int
-	lastBg    time.Time
 
 	notify func(key, text string) // уведомления (Telegram); может быть nil
 }
@@ -534,41 +533,73 @@ func (w *Watcher) checkTarget(t *Target) {
 	w.selectNode(t, fmt.Sprintf("узел «%s» залип", name))
 }
 
-// background по очереди проверяет загрузкой узлы, которые сейчас не активны,
-// чтобы у каждого копилась история и при сбое выбирался проверенный узел.
+// background проверяет загрузкой запасные узлы так, чтобы каждый проверялся
+// раз в background_cycle_min минут; проверки распределяются по тикам равномерно,
+// первыми идут те, кого не проверяли дольше всех.
 func (w *Watcher) background() {
-	every := time.Duration(w.c.Watch.BackgroundProbeMin) * time.Minute
-	if every <= 0 || time.Since(w.lastBg) < every {
+	cycle := time.Duration(w.c.Watch.BackgroundCycleMin) * time.Minute
+	if cycle <= 0 {
 		return
 	}
+	tick := time.Duration(w.c.Watch.IntervalSec) * time.Second
 	w.mu.Lock()
-	w.lastBg = time.Now()
 	active := map[string]bool{}
 	for _, t := range w.targets {
 		active[t.Active] = true
 	}
-	var pick *NodeState
-	for i := 0; i < len(w.nodes); i++ {
-		n := w.nodes[(w.bgIdx+i)%len(w.nodes)]
-		if !active[n.Tag] {
-			pick = n
-			w.bgIdx = (w.bgIdx + i + 1) % len(w.nodes)
-			break
+	due := pickDue(w.nodes, active, time.Now(), cycle, tick)
+	w.mu.Unlock()
+	for _, n := range due {
+		err := w.realTest(n.TestPort)
+		w.record(n.Tag, err == nil)
+		w.mu.Lock()
+		if err != nil {
+			n.LastErr = "фоновая проверка: " + shortErr(err)
+		} else if strings.HasPrefix(n.LastErr, "фоновая проверка") || strings.HasPrefix(n.LastErr, "загрузка") {
+			n.LastErr = ""
+		}
+		w.mu.Unlock()
+	}
+}
+
+// pickDue выбирает запасные узлы для фоновой проверки в этом тике: тех, кого не проверяли
+// дольше cycle, самых «старых» первыми, не больше чем нужно, чтобы обойти всех за cycle.
+func pickDue(nodes []*NodeState, active map[string]bool, now time.Time, cycle, tick time.Duration) []*NodeState {
+	var spare, due []*NodeState
+	for _, n := range nodes {
+		if active[n.Tag] {
+			continue
+		}
+		spare = append(spare, n)
+		if n.Stats == nil || now.Sub(n.Stats.LastTest) >= cycle-tick/2 {
+			due = append(due, n)
 		}
 	}
-	w.mu.Unlock()
-	if pick == nil {
-		return
+	last := func(n *NodeState) time.Time {
+		if n.Stats == nil {
+			return time.Time{}
+		}
+		return n.Stats.LastTest
 	}
-	err := w.realTest(pick.TestPort)
-	w.record(pick.Tag, err == nil)
-	w.mu.Lock()
-	if err != nil {
-		pick.LastErr = "фоновая проверка: " + shortErr(err)
-	} else if strings.HasPrefix(pick.LastErr, "фоновая проверка") || strings.HasPrefix(pick.LastErr, "загрузка") {
-		pick.LastErr = ""
+	sort.SliceStable(due, func(i, j int) bool { return last(due[i]).Before(last(due[j])) })
+	quota := bgQuota(len(spare), tick, cycle)
+	if quota > len(due) {
+		quota = len(due)
 	}
-	w.mu.Unlock()
+	return due[:quota]
+}
+
+// bgQuota — сколько узлов проверять за тик, чтобы обойти n узлов за cycle (не меньше одного).
+// Считается в float: в наносекундах int переполняется на 32-битных роутерах.
+func bgQuota(n int, tick, cycle time.Duration) int {
+	if n == 0 || cycle <= 0 {
+		return 0
+	}
+	q := int(math.Ceil(float64(n) * tick.Seconds() / cycle.Seconds()))
+	if q < 1 {
+		q = 1
+	}
+	return q
 }
 
 type TargetStatus struct {

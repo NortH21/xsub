@@ -75,8 +75,9 @@ type WatchConfig struct {
 	DirectURLs     []string `json:"direct_urls"`
 	// Адреса, которые тоже должны открываться через узел (например, нужный заблокированный сайт).
 	CheckURLs []string `json:"check_urls"`
-	// Раз в сколько минут проверять загрузкой один из запасных узлов (0 — не проверять).
-	BackgroundProbeMin int `json:"background_probe_min"`
+	// Каждый запасной узел проверяется загрузкой раз в столько минут (0 — не проверять).
+	// Проверки равномерно распределяются по времени.
+	BackgroundCycleMin int `json:"background_cycle_min"`
 	// Запускать XKeen заново, если ядро Xray пропало (и не запущен mihomo).
 	RestartXray bool `json:"restart_xray"`
 }
@@ -135,7 +136,7 @@ func defaultConfig() *Config {
 			BadCooldownMin:     30,
 			LatencyURL:         "https://www.gstatic.com/generate_204",
 			DirectURLs:         []string{"https://ya.ru", "https://www.google.com", "https://1.1.1.1"},
-			BackgroundProbeMin: 5,
+			BackgroundCycleMin: 30,
 			RestartXray:        true,
 		},
 		Telegram:   TelegramConfig{ExpireDays: 3, TrafficPct: 90, OnSwitch: true, OnUpdate: true},

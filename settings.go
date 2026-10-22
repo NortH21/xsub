@@ -27,7 +27,7 @@ type UISettings struct {
 		Enabled            bool     `json:"enabled"`
 		IntervalSec        int      `json:"interval_sec"`
 		FailsToSwitch      int      `json:"fails_to_switch"`
-		BackgroundProbeMin int      `json:"background_probe_min"`
+		BackgroundCycleMin int      `json:"background_cycle_min"`
 		CheckURLs          []string `json:"check_urls"`
 		RestartXray        bool     `json:"restart_xray"`
 	} `json:"watchdog"`
@@ -43,7 +43,7 @@ func (a *App) uiSettings() map[string]any {
 	s.SubIntervalHours, s.UserAgent, s.MaxNodes, s.LogFile, s.UIAllowWAN = c.SubIntervalHours, c.UserAgent, c.MaxNodes, c.LogFile, c.UIAllowWAN
 	s.Xray.FallbackTag = c.Xray.FallbackTag
 	s.Watch.Enabled, s.Watch.IntervalSec, s.Watch.FailsToSwitch = c.Watch.Enabled, c.Watch.IntervalSec, c.Watch.FailsToSwitch
-	s.Watch.BackgroundProbeMin, s.Watch.CheckURLs, s.Watch.RestartXray = c.Watch.BackgroundProbeMin, c.Watch.CheckURLs, c.Watch.RestartXray
+	s.Watch.BackgroundCycleMin, s.Watch.CheckURLs, s.Watch.RestartXray = c.Watch.BackgroundCycleMin, c.Watch.CheckURLs, c.Watch.RestartXray
 	s.Telegram = c.Telegram
 	if s.Telegram.Token != "" {
 		s.Telegram.Token = secretMask
@@ -99,8 +99,8 @@ func (a *App) validateSettings(s *UISettings) error {
 	if s.Watch.FailsToSwitch < 1 || s.Watch.FailsToSwitch > 10 {
 		return fmt.Errorf("число неудач до переключения — от 1 до 10")
 	}
-	if s.Watch.BackgroundProbeMin < 0 || s.Watch.BackgroundProbeMin > 1440 {
-		return fmt.Errorf("фоновая проверка — от 0 до 1440 минут")
+	if s.Watch.BackgroundCycleMin != 0 && (s.Watch.BackgroundCycleMin < 5 || s.Watch.BackgroundCycleMin > 1440) {
+		return fmt.Errorf("фоновая проверка — 0 (выключена) или от 5 до 1440 минут")
 	}
 	if s.MaxNodes < 1 || s.MaxNodes > 500 {
 		return fmt.Errorf("узлов из подписки — от 1 до 500")

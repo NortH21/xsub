@@ -13,7 +13,7 @@ XKeen intercepts traffic and runs Xray. xsub takes care of the contents:
 
   Nodes can be filtered by name; informational entries from panels ("10 GB left" etc.) are skipped. Traffic usage and expiry are shown when the panel provides them. Multiple subscriptions are supported.
 - **Watchdog.** Every minute the active node is checked with a **real download** (64 KB by default). This catches blocking where short probes such as `generate_204` pass but real traffic is cut. You can add your own addresses that must also open through the node. Switching goes through the Xray API, without restarting the core.
-- **Node reliability.** Spare nodes are checked one by one in the background. Each node keeps a 24-hour history, and on failure reliable nodes are tried first, not just the fastest ones by ping.
+- **Node reliability.** Every spare node is download-checked in the background once per 30 minutes (configurable), spread evenly over time. Each node keeps a 24-hour history, and on failure reliable nodes are tried first, not just the fastest ones by ping.
 - **Groups.** Send a list through its own subset of nodes, e.g. "YouTube via Netherlands" or "ChatGPT via US only". Each group has its own balancer and watchdog.
 - **"Via VPN" and "Direct" lists** are edited on the web page; remote lists can be added by URL (updated daily). Everything is checked with `xray -test` on a copy of the configs before it is applied; on error nothing changes.
 - **"Where will this site go?"** — enter a domain, link or IP and see which rule matches and which node the traffic will use (including categories from `.dat` files).
