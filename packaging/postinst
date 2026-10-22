@@ -4,7 +4,11 @@
 export PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 CONF=/opt/etc/xsub/config.json
-mkdir -p /opt/var/log
+
+# Версии до 0.3.1 писали журнал на накопитель; теперь он в оперативной памяти (/tmp).
+if ! grep -q '/opt/var/log/xsub' "$CONF" 2>/dev/null; then
+  rm -f /opt/var/log/xsub.log /opt/var/log/xsub.log.old /opt/var/log/xsub.out
+fi
 
 FIRST=0
 if [ ! -f "$CONF" ]; then

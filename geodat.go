@@ -1,0 +1,252 @@
+package main
+
+import (
+	"bufio"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+)
+
+// Чтение категорий из geosite.dat / geoip.dat (формат protobuf v2fly) без сторонних библиотек.
+// Файл читается потоком: в память попадает только нужная категория.
+
+type geoDomain struct {
+	typ   int // 0 — подстрока (keyword), 1 — регулярное выражение, 2 — домен с поддоменами, 3 — точное имя
+	value string
+	attrs []string
+}
+
+type geoCacheT struct {
+	mu   sync.Mutex
+	site map[string][]geoDomain
+	ip   map[string][]*net.IPNet
+}
+
+var geoCache = &geoCacheT{}
+
+func (g *geoCacheT) reset() {
+	g.mu.Lock()
+	g.site, g.ip = nil, nil
+	g.mu.Unlock()
+}
+
+func readVarint(r *bufio.Reader) (uint64, error) { return binary.ReadUvarint(r) }
+
+// forEachEntry проходит по записям верхнего уровня (поле 1) и отдаёт код категории и тело записи,
+// если want(код) == true; остальные записи пропускаются без чтения в память.
+func forEachEntry(path string, want func(code string) bool, fn func(code string, body []byte) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 64<<10)
+	for {
+		key, err := readVarint(r)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if key&7 != 2 {
+			return fmt.Errorf("неожиданный формат %s", filepath.Base(path))
+		}
+		size, err := readVarint(r)
+		if err != nil {
+			return err
+		}
+		// первое поле записи — код категории (строка, поле 1)
+		lr := io.LimitReader(r, int64(size))
+		br := bufio.NewReader(lr)
+		k, err := readVarint(br)
+		if err != nil {
+			return err
+		}
+		if k != (1<<3 | 2) {
+			_, _ = io.Copy(io.Discard, lr)
+			_, _ = io.Copy(io.Discard, br)
+			continue
+		}
+		l, err := readVarint(br)
+		if err != nil {
+			return err
+		}
+		codeB := make([]byte, l)
+		if _, err := io.ReadFull(br, codeB); err != nil {
+			return err
+		}
+		code := string(codeB)
+		if !want(code) {
+			_, _ = io.Copy(io.Discard, br)
+			continue
+		}
+		rest, err := io.ReadAll(br)
+		if err != nil {
+			return err
+		}
+		if err := fn(code, rest); err != nil {
+			return err
+		}
+	}
+}
+
+// fields разбирает тело сообщения protobuf: вызывает fn для каждого поля.
+func fields(b []byte, fn func(num int, wire int, v uint64, data []byte) error) error {
+	for len(b) > 0 {
+		key, n := binary.Uvarint(b)
+		if n <= 0 {
+			return errors.New("битый protobuf")
+		}
+		b = b[n:]
+		num, wire := int(key>>3), int(key&7)
+		switch wire {
+		case 0:
+			v, n := binary.Uvarint(b)
+			if n <= 0 {
+				return errors.New("битый protobuf")
+			}
+			b = b[n:]
+			if err := fn(num, wire, v, nil); err != nil {
+				return err
+			}
+		case 2:
+			l, n := binary.Uvarint(b)
+			if n <= 0 || uint64(len(b)-n) < l {
+				return errors.New("битый protobuf")
+			}
+			data := b[n : n+int(l)]
+			b = b[n+int(l):]
+			if err := fn(num, wire, 0, data); err != nil {
+				return err
+			}
+		case 5:
+			if len(b) < 4 {
+				return errors.New("битый protobuf")
+			}
+			b = b[4:]
+		case 1:
+			if len(b) < 8 {
+				return errors.New("битый protobuf")
+			}
+			b = b[8:]
+		default:
+			return errors.New("битый protobuf")
+		}
+	}
+	return nil
+}
+
+// geoSite возвращает правила категории из файла (имя без пути, в папке assetdir).
+func geoSite(c *Config, file, cat string) ([]geoDomain, error) {
+	cat = strings.ToUpper(cat)
+	key := file + ":" + cat
+	geoCache.mu.Lock()
+	if d, ok := geoCache.site[key]; ok {
+		geoCache.mu.Unlock()
+		return d, nil
+	}
+	geoCache.mu.Unlock()
+	var out []geoDomain
+	found := false
+	err := forEachEntry(filepath.Join(c.Xray.AssetDir, file),
+		func(code string) bool { return strings.EqualFold(code, cat) },
+		func(_ string, body []byte) error {
+			found = true
+			// поля GeoSite после кода: 2 — Domain
+			return fields(body, func(num, wire int, _ uint64, data []byte) error {
+				if num != 2 || wire != 2 {
+					return nil
+				}
+				var d geoDomain
+				err := fields(data, func(n, w int, v uint64, dd []byte) error {
+					switch {
+					case n == 1 && w == 0:
+						d.typ = int(v)
+					case n == 2 && w == 2:
+						d.value = string(dd)
+					case n == 3 && w == 2: // Attribute { key = 1 }
+						_ = fields(dd, func(an, aw int, _ uint64, ad []byte) error {
+							if an == 1 && aw == 2 {
+								d.attrs = append(d.attrs, string(ad))
+							}
+							return nil
+						})
+					}
+					return nil
+				})
+				out = append(out, d)
+				return err
+			})
+		})
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("в %s нет категории %s", file, cat)
+	}
+	geoCache.mu.Lock()
+	if geoCache.site == nil {
+		geoCache.site = map[string][]geoDomain{}
+	}
+	geoCache.site[key] = out
+	geoCache.mu.Unlock()
+	return out, nil
+}
+
+func geoIP(c *Config, file, cat string) ([]*net.IPNet, error) {
+	cat = strings.ToUpper(cat)
+	key := file + ":" + cat
+	geoCache.mu.Lock()
+	if d, ok := geoCache.ip[key]; ok {
+		geoCache.mu.Unlock()
+		return d, nil
+	}
+	geoCache.mu.Unlock()
+	var out []*net.IPNet
+	found := false
+	err := forEachEntry(filepath.Join(c.Xray.AssetDir, file),
+		func(code string) bool { return strings.EqualFold(code, cat) },
+		func(_ string, body []byte) error {
+			found = true
+			return fields(body, func(num, wire int, _ uint64, data []byte) error {
+				if num != 2 || wire != 2 {
+					return nil
+				}
+				var ip []byte
+				var prefix int
+				_ = fields(data, func(n, w int, v uint64, dd []byte) error {
+					switch {
+					case n == 1 && w == 2:
+						ip = append([]byte(nil), dd...)
+					case n == 2 && w == 0:
+						prefix = int(v)
+					}
+					return nil
+				})
+				if len(ip) == 4 || len(ip) == 16 {
+					out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(prefix, len(ip)*8)})
+				}
+				return nil
+			})
+		})
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("в %s нет категории %s", file, cat)
+	}
+	geoCache.mu.Lock()
+	if geoCache.ip == nil {
+		geoCache.ip = map[string][]*net.IPNet{}
+	}
+	geoCache.ip[key] = out
+	geoCache.mu.Unlock()
+	return out, nil
+}

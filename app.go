@@ -28,15 +28,20 @@ type SubState struct {
 type App struct {
 	c *Config
 	w *Watcher
+	n *Notifier
 
-	mu       sync.Mutex
-	subs     []Subscription
-	states   map[string]*SubState // по URL
-	nodes    []Node
-	geoAt    time.Time
-	geoErr   string
-	applyErr string
-	badNodes []string
+	mu        sync.Mutex
+	subs      []Subscription
+	states    map[string]*SubState // по URL
+	nodes     []Node
+	geoAt     time.Time
+	geoErr    string
+	applyErr  string
+	badNodes  []string
+	listWarns []string
+	written   [2][]byte // что xsub последний раз записал в 05_routing.json и 07_xsub.json
+	xrayGone  int       // сколько проверок подряд ядро не запущено
+	latest    string    // последняя версия на GitHub
 
 	kick chan struct{} // внеочередное обновление подписок
 }
@@ -46,7 +51,15 @@ func newApp(c *Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{c: c, w: newWatcher(c), subs: subs, states: map[string]*SubState{}, kick: make(chan struct{}, 1)}, nil
+	a := &App{c: c, w: newWatcher(c), subs: subs, states: map[string]*SubState{}, kick: make(chan struct{}, 1)}
+	a.n = newNotifier(c)
+	a.w.notify = func(key, text string) {
+		if strings.HasPrefix(key, "switch") && !c.Telegram.OnSwitch {
+			return
+		}
+		a.n.send(key, text, 0)
+	}
+	return a, nil
 }
 
 func subKey(u string) string {
@@ -81,19 +94,13 @@ func (a *App) sockopt() any {
 	return env.Sockopt(a.c)
 }
 
-// afterRestart: Xray перезапущен — ждём его и закрепляем узел заново (или выбираем новый).
+// afterRestart: Xray перезапущен — ждём его и закрепляем узлы заново (или выбираем новые).
 func (a *App) afterRestart(reason string) {
 	for i := 0; i < 20 && xrayStartTime(a.c) == ""; i++ {
 		time.Sleep(time.Second)
 	}
 	time.Sleep(3 * time.Second)
-	a.w.mu.Lock()
-	active := a.w.active
-	a.w.mu.Unlock()
-	if active != "" && a.w.override(active) == nil && a.w.realTest(a.c.Xray.ProbePort) == nil {
-		return
-	}
-	a.w.selectNode(reason)
+	a.w.repin(reason)
 }
 
 // apply — применить узлы и списки. Под opMu.
@@ -103,7 +110,7 @@ func (a *App) apply(nodes []Node, reason string, force bool) error {
 		a.mu.Lock()
 		a.nodes = nil
 		a.mu.Unlock()
-		a.w.setNodes(nil)
+		a.w.setNodes(nil, nil)
 		return nil
 	}
 	good, bad := validateNodes(a.c, nodes)
@@ -127,18 +134,36 @@ func (a *App) apply(nodes []Node, reason string, force bool) error {
 		lg.Printf("конфиг не применён (%s): %v", reason, err)
 		return err
 	}
-	a.w.setNodes(nodes)
+	a.rememberWritten()
+	groups, _ := loadGroups(a.c)
+	a.w.setNodes(nodes, targetDefs(a.c, nodes, groups))
+	if rs, _, err := readRouting(a.c); err == nil {
+		a.mu.Lock()
+		a.listWarns = rs.Warnings
+		a.mu.Unlock()
+	}
 	if changed && len(nodes) > 0 {
 		a.afterRestart(reason)
 	}
+	a.w.selectMissing(reason)
 	return nil
 }
 
-// startup: geo-файлы, узлы из кэша, применение, выбор узла.
+// rememberWritten запоминает содержимое файлов xsub, чтобы заметить, если их кто-то заменит.
+func (a *App) rememberWritten() {
+	r, _ := os.ReadFile(filepath.Join(a.c.Xray.ConfDir, routingFile))
+	x, _ := os.ReadFile(filepath.Join(a.c.Xray.ConfDir, xsubFile))
+	a.mu.Lock()
+	a.written = [2][]byte{r, x}
+	a.mu.Unlock()
+}
+
+// startup: geo-файлы, внешние списки, узлы из кэша, применение, выбор узлов.
 func (a *App) startup() {
 	opMu.Lock()
 	defer opMu.Unlock()
 	a.updateGeoLocked(false)
+	a.updateRemotesLocked(false)
 	nodes := a.collect(false)
 	a.mu.Lock()
 	haveSubs := len(a.subs) > 0
@@ -146,14 +171,6 @@ func (a *App) startup() {
 	// Сохранённых копий нет, а подписки есть — их сейчас скачает subLoop; лишний перезапуск Xray не нужен.
 	if len(nodes) > 0 || !haveSubs {
 		_ = a.apply(nodes, "запуск", false)
-	}
-	if len(nodes) > 0 {
-		a.w.mu.Lock()
-		active := a.w.active
-		a.w.mu.Unlock()
-		if active == "" {
-			a.w.selectNode("запуск")
-		}
 	}
 }
 
@@ -176,12 +193,10 @@ func (a *App) collect(fetch bool) []Node {
 		if prev != nil {
 			st.At, st.Info = prev.At, prev.Info
 		}
+		infoPath := strings.TrimSuffix(a.cachePath(s.URL), ".txt") + ".info"
 		var raw []byte
 		if fetch {
-			ua := s.UserAgent
-			if ua == "" {
-				ua = a.c.UserAgent
-			}
+			ua := firstNonEmpty(s.UserAgent, a.c.UserAgent)
 			b, h, err := fetchURL(a.c, s.URL, ua, 8<<20)
 			if err == nil {
 				if n, w := a.parseSub(s, b, sock, false); len(n) == 0 {
@@ -197,17 +212,16 @@ func (a *App) collect(fetch bool) []Node {
 				st.At = time.Now()
 				st.Info = parseUserInfo(h)
 				_ = os.MkdirAll(a.c.path("cache"), 0o700)
-				_ = writeAtomicMode(a.cachePath(s.URL), b, 0o600)
+				writeIfChanged(a.cachePath(s.URL), b)
 				if st.Info != nil {
 					if ib, err := json.Marshal(st.Info); err == nil {
-						_ = writeAtomicMode(strings.TrimSuffix(a.cachePath(s.URL), ".txt")+".info", ib, 0o600)
+						writeIfChanged(infoPath, ib)
 					}
 				}
 			}
 		}
 		if raw == nil {
-			b, err := os.ReadFile(a.cachePath(s.URL))
-			if err == nil {
+			if b, err := os.ReadFile(a.cachePath(s.URL)); err == nil {
 				raw = b
 				st.Cached = true
 				if st.At.IsZero() {
@@ -216,7 +230,7 @@ func (a *App) collect(fetch bool) []Node {
 					}
 				}
 				if st.Info == nil {
-					if ib, err := os.ReadFile(strings.TrimSuffix(a.cachePath(s.URL), ".txt") + ".info"); err == nil {
+					if ib, err := os.ReadFile(infoPath); err == nil {
 						var ui UserInfo
 						if json.Unmarshal(ib, &ui) == nil {
 							st.Info = &ui
@@ -260,14 +274,7 @@ func (a *App) refreshSubs() (failed bool) {
 	if err := a.apply(nodes, "обновление подписок", false); err != nil {
 		return true
 	}
-	if len(nodes) > 0 {
-		a.w.mu.Lock()
-		active, recent := a.w.active, time.Since(a.w.lastSelect) < time.Minute
-		a.w.mu.Unlock()
-		if active == "" && !recent {
-			a.w.selectNode("после обновления подписок")
-		}
-	}
+	a.checkSubLimits()
 	return failed
 }
 
@@ -298,6 +305,42 @@ func (a *App) kickRefresh() {
 	}
 }
 
+// checkSubLimits — уведомления о сроке действия и трафике подписок.
+func (a *App) checkSubLimits() {
+	tg := a.c.Telegram
+	a.mu.Lock()
+	type item struct {
+		name string
+		ui   UserInfo
+	}
+	var items []item
+	for _, s := range a.subs {
+		if st := a.states[s.URL]; st != nil && st.Info != nil {
+			items = append(items, item{s.Name, *st.Info})
+		}
+	}
+	a.mu.Unlock()
+	for _, it := range items {
+		if it.ui.Expire > 0 && tg.ExpireDays > 0 {
+			left := time.Until(time.Unix(it.ui.Expire, 0))
+			if left < time.Duration(tg.ExpireDays)*24*time.Hour {
+				msg := fmt.Sprintf("подписка «%s» заканчивается %s", it.name, time.Unix(it.ui.Expire, 0).Format("02.01.2006"))
+				if left <= 0 {
+					msg = fmt.Sprintf("подписка «%s» закончилась", it.name)
+				}
+				a.n.send("expire"+it.name, msg, 24*time.Hour)
+			}
+		}
+		if it.ui.Total > 0 && tg.TrafficPct > 0 {
+			used := it.ui.Upload + it.ui.Download
+			if used*100 >= it.ui.Total*int64(tg.TrafficPct) {
+				a.n.send("traffic"+it.name, fmt.Sprintf("подписка «%s»: израсходовано %.1f из %.1f ГБ",
+					it.name, float64(used)/(1<<30), float64(it.ui.Total)/(1<<30)), 24*time.Hour)
+			}
+		}
+	}
+}
+
 // saveSubs сохраняет список подписок с веб-страницы и запускает их обновление.
 func (a *App) saveSubs(subs []Subscription) error {
 	for i := range subs {
@@ -322,42 +365,156 @@ func (a *App) saveSubs(subs []Subscription) error {
 	return nil
 }
 
-// saveList сохраняет vpn.txt/direct.txt и применяет; при ошибке возвращает старый файл.
-func (a *App) saveList(name, text string) error {
-	if name != "vpn" && name != "direct" {
-		return fmt.Errorf("нет списка %s", name)
+// listFile — имя файла списка по его имени на странице: vpn, direct или id группы.
+func (a *App) listFile(name string) (string, error) {
+	switch name {
+	case "vpn", "direct":
+		return name + ".txt", nil
 	}
-	if _, _, errs := parseList(text); len(errs) > 0 {
+	gs, _ := loadGroups(a.c)
+	for _, g := range gs {
+		if g.ID == name {
+			return groupListName(g.ID), nil
+		}
+	}
+	return "", fmt.Errorf("нет списка %s", name)
+}
+
+// saveList сохраняет список и применяет; при ошибке возвращает старый файл.
+func (a *App) saveList(name, text string) error {
+	file, err := a.listFile(name)
+	if err != nil {
+		return err
+	}
+	_, remotes, errs := parseListFull(text)
+	if len(errs) > 0 {
 		return fmt.Errorf("%s", strings.Join(errs, "\n"))
 	}
 	opMu.Lock()
 	defer opMu.Unlock()
-	p := a.c.path(name + ".txt")
+	// новые внешние списки скачиваем сразу, чтобы они попали в конфиг
+	var rerrs []string
+	for _, u := range remotes {
+		if _, err := os.Stat(remotePath(a.c, u)); err != nil {
+			if err := fetchRemote(a.c, u); err != nil {
+				rerrs = append(rerrs, fmt.Sprintf("%s: %v", u, err))
+			}
+		}
+	}
+	if len(rerrs) > 0 {
+		return fmt.Errorf("не удалось скачать внешний список:\n%s", strings.Join(rerrs, "\n"))
+	}
+	p := a.c.path(file)
 	old, _ := os.ReadFile(p)
-	if err := writeAtomic(p, []byte(text)); err != nil {
+	if err := writeAtomicMode(p, []byte(text), 0o600); err != nil {
 		return err
 	}
 	a.mu.Lock()
 	nodes := a.nodes
 	a.mu.Unlock()
-	if err := a.apply(nodes, "изменён "+name+".txt", false); err != nil {
-		_ = writeAtomic(p, old)
+	if err := a.apply(nodes, "изменён "+file, false); err != nil {
+		_ = writeAtomicMode(p, old, 0o600)
 		return err
 	}
-	lg.Printf("сохранён %s.txt", name)
+	lg.Printf("сохранён %s", file)
 	return nil
+}
+
+// saveGroups сохраняет группы; списки удалённых групп удаляются.
+func (a *App) saveGroups(gs []Group) error {
+	for i := range gs {
+		gs[i].Name = strings.TrimSpace(gs[i].Name)
+		if gs[i].ID == "" {
+			gs[i].ID = newGroupID(gs)
+		}
+	}
+	if err := validateGroups(gs); err != nil {
+		return err
+	}
+	opMu.Lock()
+	defer opMu.Unlock()
+	old, _ := loadGroups(a.c)
+	b, _ := marshal(gs)
+	if err := writeAtomicMode(a.c.path(groupsFile), b, 0o600); err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	for _, g := range gs {
+		keep[g.ID] = true
+		if _, err := os.Stat(a.c.path(groupListName(g.ID))); err != nil {
+			_ = os.WriteFile(a.c.path(groupListName(g.ID)), []byte("# Домены этой группы, формат как в vpn.txt\n"), 0o600)
+		}
+	}
+	a.mu.Lock()
+	nodes := a.nodes
+	a.mu.Unlock()
+	if err := a.apply(nodes, "изменены группы", false); err != nil {
+		if ob, e := marshal(old); e == nil {
+			_ = writeAtomicMode(a.c.path(groupsFile), ob, 0o600)
+		}
+		return err
+	}
+	for _, g := range old {
+		if !keep[g.ID] {
+			_ = os.Remove(a.c.path(groupListName(g.ID)))
+		}
+	}
+	lg.Printf("группы сохранены: %d", len(gs))
+	return nil
+}
+
+func newGroupID(gs []Group) string {
+	used := map[string]bool{}
+	for _, g := range gs {
+		used[g.ID] = true
+	}
+	for i := 1; ; i++ {
+		id := fmt.Sprintf("g%d", i)
+		if !used[id] {
+			return id
+		}
+	}
 }
 
 func (a *App) updateGeo(force bool) {
 	opMu.Lock()
 	defer opMu.Unlock()
 	a.updateGeoLocked(force)
+	a.updateRemotesLocked(force)
+}
+
+// updateRemotesLocked обновляет внешние списки (force=false — только отсутствующие) и применяет, если что-то изменилось.
+func (a *App) updateRemotesLocked(force bool) {
+	rs, _, err := readRouting(a.c)
+	if err != nil {
+		return
+	}
+	changed := false
+	for _, u := range rs.Remotes {
+		p := remotePath(a.c, u)
+		old, oerr := os.ReadFile(p)
+		if !force && oerr == nil {
+			continue
+		}
+		if err := fetchRemote(a.c, u); err != nil {
+			lg.Printf("внешний список %s не обновлён: %v", u, err)
+			continue
+		}
+		if nb, _ := os.ReadFile(p); !bytes.Equal(old, nb) {
+			changed = true
+		}
+	}
+	if changed && managed(a.c) {
+		a.mu.Lock()
+		nodes := a.nodes
+		a.mu.Unlock()
+		_ = a.apply(nodes, "обновлены внешние списки", false)
+	}
 }
 
 // updateGeoLocked: при force=false качает только отсутствующие файлы.
 func (a *App) updateGeoLocked(force bool) {
-	var changed []string
-	var errs []string
+	var changed, errs []string
 	for _, g := range a.c.Geo.Files {
 		p := filepath.Join(a.c.Xray.AssetDir, g.Name)
 		old, oerr := os.ReadFile(p)
@@ -384,6 +541,7 @@ func (a *App) updateGeoLocked(force bool) {
 		}
 		changed = append(changed, p)
 	}
+	geoCache.reset()
 	a.mu.Lock()
 	a.geoAt = time.Now()
 	a.geoErr = strings.Join(errs, "; ")
@@ -408,9 +566,69 @@ func (a *App) updateGeoLocked(force bool) {
 		lg.Printf("ошибка перезапуска: %v", err)
 		return
 	}
-	if len(a.w.status().Nodes) > 0 {
+	if len(a.w.allTargets()) > 0 {
 		a.afterRestart("после обновления geo")
 	}
+}
+
+// healLoop — самовосстановление: файлы xsub подменили или ядро Xray пропало.
+func (a *App) healLoop(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		a.heal()
+	}
+}
+
+func (a *App) heal() {
+	if !managed(a.c) {
+		return
+	}
+	opMu.Lock()
+	defer opMu.Unlock()
+	// 1. Конфиги, которые записал xsub, заменили (обновление XKeen, ручная правка, другая панель).
+	r, _ := os.ReadFile(filepath.Join(a.c.Xray.ConfDir, routingFile))
+	x, _ := os.ReadFile(filepath.Join(a.c.Xray.ConfDir, xsubFile))
+	a.mu.Lock()
+	w := a.written
+	nodes := a.nodes
+	a.mu.Unlock()
+	if w[0] != nil && (!bytes.Equal(r, w[0]) || !bytes.Equal(x, w[1])) {
+		a.w.say("heal", "heal", "файлы конфигурации Xray изменены не xsub — восстанавливаю")
+		_ = a.apply(nodes, "восстановление конфига", false)
+		return
+	}
+	// 2. Ядро Xray не запущено (упало или XKeen остановился). Если запущен mihomo — это выбор пользователя.
+	if !a.c.Watch.RestartXray || xrayStartTime(a.c) != "" {
+		a.mu.Lock()
+		a.xrayGone = 0
+		a.mu.Unlock()
+		return
+	}
+	if procStamp("mihomo") != "" {
+		return
+	}
+	a.mu.Lock()
+	a.xrayGone++
+	gone := a.xrayGone
+	a.mu.Unlock()
+	if gone < 3 {
+		return // ждём 3 минуты: XKeen мог перезапускаться
+	}
+	a.w.say("heal", "heal", "ядро Xray не запущено уже 3 минуты — перезапускаю XKeen")
+	a.mu.Lock()
+	a.xrayGone = 0
+	a.mu.Unlock()
+	if err := restartXray(a.c); err != nil {
+		lg.Printf("перезапуск не удался: %v", err)
+		return
+	}
+	a.afterRestart("после перезапуска Xray")
 }
 
 func every(ctx context.Context, d time.Duration, f func()) {
@@ -428,14 +646,18 @@ func every(ctx context.Context, d time.Duration, f func()) {
 
 type AppStatus struct {
 	Status
-	Version  string         `json:"version"`
-	Subs     []SubStatusOut `json:"subs"`
-	GeoAt    time.Time      `json:"geo_at"`
-	GeoErr   string         `json:"geo_err"`
-	ApplyErr string         `json:"apply_err"`
-	BadNodes []string       `json:"bad_nodes"`
-	Managed  bool           `json:"managed"`
-	Log      []string       `json:"log"`
+	Version   string         `json:"version"`
+	Latest    string         `json:"latest"`
+	Subs      []SubStatusOut `json:"subs"`
+	Groups    []Group        `json:"groups"`
+	GeoAt     time.Time      `json:"geo_at"`
+	GeoErr    string         `json:"geo_err"`
+	ApplyErr  string         `json:"apply_err"`
+	BadNodes  []string       `json:"bad_nodes"`
+	ListWarns []string       `json:"list_warns"`
+	Managed   bool           `json:"managed"`
+	Events    []Event        `json:"events"`
+	Log       []string       `json:"log"`
 }
 
 type SubStatusOut struct {
@@ -445,13 +667,23 @@ type SubStatusOut struct {
 
 func (a *App) status() AppStatus {
 	s := AppStatus{Status: a.w.status(), Version: version, Managed: managed(a.c)}
+	s.Groups, _ = loadGroups(a.c)
 	a.mu.Lock()
 	for _, sub := range a.subs {
 		s.Subs = append(s.Subs, SubStatusOut{Subscription: sub, State: a.states[sub.URL]})
 	}
 	s.GeoAt, s.GeoErr, s.ApplyErr = a.geoAt, a.geoErr, a.applyErr
-	s.BadNodes = a.badNodes
+	s.BadNodes, s.ListWarns, s.Latest = a.badNodes, a.listWarns, a.latest
 	a.mu.Unlock()
+	s.Events = events.list()
 	s.Log = lg.Tail(80)
 	return s
+}
+
+// writeIfChanged не трогает файл, если содержимое не изменилось (бережём флеш-память).
+func writeIfChanged(path string, b []byte) {
+	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, b) {
+		return
+	}
+	_ = writeAtomicMode(path, b, 0o600)
 }

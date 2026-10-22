@@ -139,7 +139,7 @@ func TestEnvDetection(t *testing.T) {
 		t.Errorf("sockopt: %s", so)
 	}
 	nodes, _ := parseSubscription(decodeSubscription([]byte(sampleSub())), parseOpts{maxNodes: 2})
-	r, x, err := generate(c, env, nodes, Lists{VPNDomains: []string{"domain:example.com"}})
+	r, x, err := generate(c, env, nodes, RouteSet{VPN: Rules{Domains: []string{"domain:example.com"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,14 +150,14 @@ func TestEnvDetection(t *testing.T) {
 		t.Error("правило для несуществующих force-proxy входов")
 	}
 	// без узлов и без запасного — VPN-правил нет, всё напрямую
-	r, _, _ = generate(c, env, nil, Lists{VPNDomains: []string{"domain:example.com"}})
+	r, _, _ = generate(c, env, nil, RouteSet{VPN: Rules{Domains: []string{"domain:example.com"}}})
 	if strings.Contains(string(r), "example.com") {
 		t.Errorf("без узлов VPN-правила не нужны:\n%s", r)
 	}
 	// конфликт с чужой секцией api
 	writeConf(t, c.Xray.ConfDir, map[string]string{"02_api.json": `{"api":{"tag":"api"}}`})
 	env, _ = scanEnv(c)
-	if _, _, err := generate(c, env, nodes, Lists{}); err == nil || !strings.Contains(err.Error(), "02_api.json") {
+	if _, _, err := generate(c, env, nodes, RouteSet{}); err == nil || !strings.Contains(err.Error(), "02_api.json") {
 		t.Errorf("ожидалась ошибка про api: %v", err)
 	}
 }
@@ -209,6 +209,10 @@ func TestWithRealXray(t *testing.T) {
 	})
 	os.WriteFile(c.path("vpn.txt"), []byte(defaultVPN), 0o644)
 	os.WriteFile(c.path("direct.txt"), []byte("ru-board.com\n"), 0o644)
+	gb, _ := marshal([]Group{{ID: "g1", Name: "NL", Filter: "(?i)netherlands"}, {ID: "g2", Name: "Пусто", Filter: "^нет$"}})
+	os.WriteFile(c.path(groupsFile), gb, 0o644)
+	os.WriteFile(c.path(groupListName("g1")), []byte("ext:geosite_itdog.dat:youtube\n"), 0o644)
+	os.WriteFile(c.path(groupListName("g2")), []byte("empty.example\n"), 0o644)
 
 	nodes, _ := parseSubscription(decodeSubscription([]byte(sampleSub())), parseOpts{sockopt: map[string]any{"mark": 255}})
 	if managed(c) {
@@ -248,5 +252,26 @@ func TestWithRealXray(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(c.Xray.ConfDir, xsubFile)); !os.IsNotExist(err) {
 		t.Fatal("07_xsub.json не удалён")
+	}
+}
+
+func TestLogRotation(t *testing.T) {
+	dir := t.TempDir()
+	l := &Logger{path: filepath.Join(dir, "x.log"), maxSize: 1024}
+	for i := 0; i < 200; i++ {
+		l.Printf("строка %d %s", i, strings.Repeat("x", 40))
+	}
+	cur, _ := os.Stat(l.path)
+	old, _ := os.Stat(l.path + ".old")
+	if cur == nil || old == nil || cur.Size() > 1200 || old.Size() > 1200 {
+		t.Fatalf("ротация не работает: %v %v", cur, old)
+	}
+	if got := l.Tail(5); len(got) != 5 || !strings.Contains(got[4], "строка 199") {
+		t.Fatalf("хвост в памяти: %v", got)
+	}
+	m := &Logger{maxSize: 1024} // только в памяти
+	m.Printf("тест")
+	if len(m.Tail(10)) != 1 {
+		t.Fatal("журнал в памяти")
 	}
 }

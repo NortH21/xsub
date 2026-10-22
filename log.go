@@ -8,15 +8,19 @@ import (
 	"time"
 )
 
+// Logger держит последние строки в памяти (их показывает веб-страница) и, если задан файл,
+// дописывает их туда. По умолчанию файл в /tmp — это оперативная память роутера,
+// флеш-память и USB-накопитель не изнашиваются.
 type Logger struct {
-	mu   sync.Mutex
-	path string
-	ring []string
+	mu      sync.Mutex
+	path    string
+	maxSize int64 // при превышении файл становится .old, предыдущий .old удаляется
+	ring    []string
 }
 
 const ringSize = 300
 
-var lg = &Logger{}
+var lg = &Logger{maxSize: 256 << 10}
 
 func (l *Logger) Printf(format string, a ...any) {
 	line := time.Now().Format("2006-01-02 15:04:05") + " " + fmt.Sprintf(format, a...)
@@ -27,16 +31,14 @@ func (l *Logger) Printf(format string, a ...any) {
 		l.ring = l.ring[len(l.ring)-ringSize:]
 	}
 	if l.path == "" {
-		fmt.Println(line)
 		return
 	}
-	if st, err := os.Stat(l.path); err == nil && st.Size() > 300_000 {
+	if st, err := os.Stat(l.path); err == nil && st.Size() > l.maxSize {
 		_ = os.Rename(l.path, l.path+".old")
 	}
 	_ = os.MkdirAll(filepath.Dir(l.path), 0o755)
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		fmt.Println(line)
 		return
 	}
 	fmt.Fprintln(f, line)

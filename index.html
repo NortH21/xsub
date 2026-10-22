@@ -5,103 +5,309 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>xsub</title>
 <style>
-:root{--bg:#0f1419;--panel:#171d24;--line:#26303b;--text:#d8dee6;--muted:#8a96a3;--ok:#4caf7a;--bad:#e05d5d;--warn:#d9a441;--acc:#4a9eda}
-@media (prefers-color-scheme: light){:root{--bg:#f4f6f8;--panel:#fff;--line:#dde2e8;--text:#1d2329;--muted:#5f6b77;--ok:#2e8b57;--bad:#c63b3b;--warn:#a87410;--acc:#1f6fb2}}
+:root{--bg:#0f1419;--panel:#171d24;--line:#26303b;--text:#d8dee6;--muted:#8a96a3;--ok:#4caf7a;--bad:#e05d5d;--warn:#d9a441;--acc:#4a9eda;--none:#2a333d}
+@media (prefers-color-scheme: light){:root{--bg:#f4f6f8;--panel:#fff;--line:#dde2e8;--text:#1d2329;--muted:#5f6b77;--ok:#2e8b57;--bad:#c63b3b;--warn:#a87410;--acc:#1f6fb2;--none:#e3e7ec}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1000px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 12px}
+main{max-width:1040px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px}
+h1{font-size:20px;margin:0}
 h2{font-size:15px;margin:0 0 10px}
+h3{font-size:14px;margin:14px 0 8px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .grow{flex:1 1 260px}
-button{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px;font:inherit;cursor:pointer}
+button,select{background:transparent;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 11px;font:inherit;cursor:pointer}
+select{background:var(--bg)}
 button:hover{border-color:var(--acc)}
 button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.5;cursor:wait}
+input,textarea{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;min-width:0}
+textarea{width:100%;min-height:300px;padding:10px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}
+label{display:flex;flex-direction:column;gap:4px;flex:1 1 220px}
+label.check{flex-direction:row;align-items:center;gap:8px;flex:1 1 100%}
 .muted{color:var(--muted)}
 .ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
 .big{font-size:17px;font-weight:600}
-.err{white-space:pre-wrap;color:var(--bad);margin-top:8px}
+.err{white-space:pre-wrap;color:var(--bad)}
+.note{white-space:pre-wrap;color:var(--warn)}
 table{width:100%;border-collapse:collapse}
-td,th{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{color:var(--muted);font-weight:500}
 tr.active td{background:color-mix(in srgb,var(--acc) 12%,transparent)}
-.tabs{display:flex;gap:6px;margin-bottom:8px}
-.tabs button.on{border-color:var(--acc);color:var(--acc)}
-textarea{width:100%;min-height:340px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:10px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}
-pre{margin:0;max-height:300px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+nav.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+nav.tabs button.on,.subtabs button.on{border-color:var(--acc);color:var(--acc)}
+.subtabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+pre{margin:0;max-height:420px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
 .scroll{overflow-x:auto}
-#msg{min-height:1.4em}
-input{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;min-width:0}
-.sub{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
-.sub .row input{flex:1 1 220px}
-.sub .row input.n{flex:1 1 140px;max-width:220px}
+.card{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.card .row input{flex:1 1 200px}
+.card .row input.n{flex:1 1 140px;max-width:220px}
+.strip{display:flex;gap:1px;height:14px;margin-top:6px}
+.strip i{flex:1;border-radius:2px;background:var(--none)}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;margin-left:6px}
+.banner{border:1px solid var(--acc);border-radius:8px;padding:10px;margin-bottom:12px}
+code{font:12px ui-monospace,Menlo,Consolas,monospace}
+.hide{display:none}
+#msg{min-height:1.4em;margin-top:8px}
+#nodesTable td:first-child{min-width:150px}
+@media (max-width:640px){
+  #nodesTable thead{display:none}
+  #nodesTable tr{display:block;border-bottom:1px solid var(--line);padding:6px 0}
+  #nodesTable td{display:block;border:0;padding:2px 6px}
+}
 </style>
 </head>
 <body>
 <main>
-<h1>xsub <span class="muted" id="ver" style="font-size:13px;font-weight:400"></span></h1>
+<header>
+  <h1>xsub <span class="muted" id="ver" style="font-size:13px;font-weight:400"></span></h1>
+  <span class="grow"></span>
+  <select id="lang" onchange="setLang(this.value)"><option value="ru">Русский</option><option value="en">English</option></select>
+</header>
+<div id="updBanner" class="banner hide"></div>
 
-<section>
-  <div class="row">
-    <div class="grow">
-      <div class="muted">Сейчас трафик VPN идёт через</div>
-      <div class="big" id="active">—</div>
-      <div class="muted" id="sub"></div>
+<nav class="tabs" id="tabs"></nav>
+
+<!-- Обзор -->
+<div data-tab="overview">
+  <section>
+    <div id="targets"></div>
+    <div class="row" style="margin-top:10px">
+      <button data-i18n="btnAuto" onclick="act('/api/auto','msgAuto')"></button>
+      <button data-i18n="btnCheck" onclick="act('/api/check','msgCheck')"></button>
+      <button data-i18n="btnSubs" onclick="act('/api/sub/refresh','msgSubs')"></button>
+      <button data-i18n="btnGeo" onclick="act('/api/geo/refresh','msgGeo')"></button>
     </div>
-    <button onclick="act('/api/auto','Ищу рабочий узел…')">Автовыбор</button>
-    <button onclick="act('/api/check','Проверяю задержку…')">Проверить узлы</button>
-    <button onclick="act('/api/sub/refresh','Обновляю подписки…')">Обновить подписки</button>
-    <button onclick="act('/api/geo/refresh','Обновляю geo-файлы…')">Обновить geo</button>
-  </div>
-  <div id="msg" class="muted"></div>
-  <div id="errs" class="err"></div>
-</section>
+    <div id="msg" class="muted"></div>
+    <div id="errs" class="err"></div>
+    <div id="warns" class="note"></div>
+    <div id="sum" class="muted" style="margin-top:6px"></div>
+  </section>
+  <section>
+    <h2 data-i18n="events"></h2>
+    <div id="events" class="muted"></div>
+  </section>
+</div>
 
-<section>
-  <h2>Подписки</h2>
-  <div id="subs"></div>
-  <div class="row" style="margin-top:8px">
-    <button onclick="addSub()">+ Добавить подписку</button>
-    <button class="primary" id="ssave" onclick="saveSubs()">Сохранить подписки</button>
-    <span id="smsg" class="muted"></span>
-  </div>
-  <div class="muted" style="margin-top:8px">Подходят ссылки vless/vmess/trojan/ss/hysteria2/wireguard/socks/http (списком или в base64), Clash/mihomo YAML, sing-box JSON и JSON Xray. Фильтр — регулярное выражение по имени узла, например <code>(?i)Россия|Осталось</code>. Информационные строки панелей пропускаются сами.</div>
-</section>
+<!-- Подписки -->
+<div data-tab="subs" class="hide">
+  <section>
+    <h2 data-i18n="tabSubs"></h2>
+    <div id="subs"></div>
+    <div class="row" style="margin-top:8px">
+      <button data-i18n="addSub" onclick="addSub()"></button>
+      <button class="primary" id="ssave" data-i18n="saveSubs" onclick="saveSubs()"></button>
+      <span id="smsg" class="muted"></span>
+    </div>
+    <p class="muted" data-i18n="subsHint"></p>
+  </section>
+</div>
 
-<section>
-  <h2>Узлы</h2>
-  <div class="scroll"><table>
-    <thead><tr><th>Узел</th><th>Задержка</th><th>Состояние</th><th></th></tr></thead>
-    <tbody id="nodes"></tbody>
-  </table></div>
-</section>
+<!-- Узлы -->
+<div data-tab="nodes" class="hide">
+  <section>
+    <h2 data-i18n="tabNodes"></h2>
+    <div class="scroll"><table id="nodesTable">
+      <thead><tr><th data-i18n="thNode"></th><th data-i18n="thLat"></th><th data-i18n="thRel"></th><th data-i18n="thState"></th><th></th></tr></thead>
+      <tbody id="nodes"></tbody>
+    </table></div>
+    <p class="muted" data-i18n="nodesHint"></p>
+  </section>
+</div>
 
-<section>
-  <div class="tabs">
-    <button id="t-vpn" class="on" onclick="tab('vpn')">Через VPN</button>
-    <button id="t-direct" onclick="tab('direct')">Напрямую</button>
-  </div>
-  <div class="muted" style="margin-bottom:8px">Одна запись на строку: <code>example.com</code> — с поддоменами, <code>=example.com</code> — только он, <code>geosite:…</code>, <code>ext:файл.dat:…</code>, IP или подсеть. «Напрямую» проверяется раньше «Через VPN».</div>
-  <textarea id="list" spellcheck="false"></textarea>
-  <div class="row" style="margin-top:8px">
-    <button class="primary" id="save" onclick="save()">Сохранить и применить</button>
-    <span id="lmsg" class="muted"></span>
-  </div>
-</section>
+<!-- Списки и группы -->
+<div data-tab="lists" class="hide">
+  <section>
+    <div class="subtabs" id="listTabs"></div>
+    <p class="muted" data-i18n="listHint"></p>
+    <textarea id="list" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" id="lsave" data-i18n="saveApply" onclick="saveList()"></button>
+      <span id="lmsg" class="muted"></span>
+    </div>
+  </section>
+  <section>
+    <h2 data-i18n="groups"></h2>
+    <p class="muted" data-i18n="groupsHint"></p>
+    <div id="groups"></div>
+    <div class="row" style="margin-top:8px">
+      <button data-i18n="addGroup" onclick="addGroup()"></button>
+      <button class="primary" id="gsave" data-i18n="saveGroups" onclick="saveGroups()"></button>
+      <span id="gmsg" class="muted"></span>
+    </div>
+  </section>
+</div>
 
-<section>
-  <h2>Журнал</h2>
-  <pre id="log"></pre>
-</section>
+<!-- Проверка сайта -->
+<div data-tab="route" class="hide">
+  <section>
+    <h2 data-i18n="routeTitle"></h2>
+    <div class="row">
+      <input id="rq" class="grow" data-i18n-ph="routePh" onkeydown="if(event.key==='Enter')checkRoute()">
+      <button class="primary" data-i18n="routeBtn" onclick="checkRoute()"></button>
+    </div>
+    <div id="rres" style="margin-top:12px"></div>
+  </section>
+</div>
+
+<!-- Настройки -->
+<div data-tab="settings" class="hide">
+  <section>
+    <h2 data-i18n="setMain"></h2>
+    <div class="row">
+      <label><span data-i18n="sInterval"></span><input id="s_sub_interval_hours" type="number" min="1" max="168"></label>
+      <label><span data-i18n="sUA"></span><input id="s_user_agent"></label>
+      <label><span data-i18n="sMax"></span><input id="s_max_nodes" type="number" min="1" max="500"></label>
+      <label><span data-i18n="sFallback"></span><select id="s_fallback_tag"></select></label>
+    </div>
+    <h3 data-i18n="setWatch"></h3>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="s_w_enabled"><span data-i18n="sWEnabled"></span></label>
+      <label><span data-i18n="sWInterval"></span><input id="s_w_interval_sec" type="number" min="15" max="3600"></label>
+      <label><span data-i18n="sWFails"></span><input id="s_w_fails_to_switch" type="number" min="1" max="10"></label>
+      <label><span data-i18n="sWBg"></span><input id="s_w_background_probe_min" type="number" min="0" max="1440"></label>
+      <label class="check"><input type="checkbox" id="s_w_restart_xray"><span data-i18n="sWRestart"></span></label>
+      <label style="flex-basis:100%"><span data-i18n="sWUrls"></span><textarea id="s_w_check_urls" style="min-height:70px"></textarea></label>
+    </div>
+    <h3>Telegram</h3>
+    <div class="row">
+      <label><span data-i18n="sTgToken"></span><input id="s_tg_token" autocomplete="off"></label>
+      <label><span>chat_id</span><input id="s_tg_chat_id"></label>
+      <label><span data-i18n="sTgDays"></span><input id="s_tg_expire_days" type="number" min="0" max="60"></label>
+      <label><span data-i18n="sTgPct"></span><input id="s_tg_traffic_pct" type="number" min="0" max="100"></label>
+      <label class="check"><input type="checkbox" id="s_tg_on_switch"><span data-i18n="sTgSwitch"></span></label>
+      <label class="check"><input type="checkbox" id="s_tg_on_update"><span data-i18n="sTgUpdate"></span></label>
+    </div>
+    <div class="row"><button data-i18n="sTgTest" onclick="tgTest()"></button><span id="tgmsg" class="muted"></span></div>
+    <p class="muted" data-i18n="sTgHint"></p>
+    <h3 data-i18n="setAccess"></h3>
+    <div class="row">
+      <label><span data-i18n="sPass"></span><input id="s_password" type="password" autocomplete="new-password"></label>
+      <label><span data-i18n="sLog"></span><select id="s_log_file"><option value="/tmp/xsub.log" data-i18n="logTmp"></option><option value="" data-i18n="logMem"></option><option value="/opt/var/log/xsub.log" data-i18n="logDisk"></option></select></label>
+      <label class="check"><input type="checkbox" id="s_ui_allow_wan"><span data-i18n="sWan"></span></label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="setsave" data-i18n="saveSettings" onclick="saveSettings()"></button>
+      <span id="setmsg" class="muted"></span>
+    </div>
+  </section>
+  <section>
+    <h2 data-i18n="setBackup"></h2>
+    <p class="muted" data-i18n="backupHint"></p>
+    <div class="row">
+      <a href="/api/backup"><button data-i18n="backupBtn"></button></a>
+      <label class="check" style="flex:0 1 auto"><input type="file" id="restoreFile" accept=".json,application/json" onchange="restore(this)"><span data-i18n="restoreBtn"></span></label>
+      <span id="bmsg" class="muted"></span>
+    </div>
+  </section>
+  <section>
+    <h2 data-i18n="setUpdate"></h2>
+    <div class="row">
+      <span id="uver" class="grow"></span>
+      <button data-i18n="updCheck" onclick="updCheck()"></button>
+      <button class="primary" id="updBtn" data-i18n="updBtn" onclick="doUpdate()"></button>
+    </div>
+    <pre id="ulog" class="muted" style="margin-top:8px"></pre>
+  </section>
+</div>
+
+<!-- Журнал -->
+<div data-tab="log" class="hide">
+  <section>
+    <h2 data-i18n="tabLog"></h2>
+    <pre id="log"></pre>
+  </section>
+</div>
 </main>
 
 <script>
-let cur = 'vpn', lists = {}, dirty = false, subs = [], subsDirty = false, lastSubs = [];
+const I18N = {
+ru: {
+  tabOverview:'Обзор', tabSubs:'Подписки', tabNodes:'Узлы', tabLists:'Списки и группы', tabRoute:'Проверка сайта', tabSettings:'Настройки', tabLog:'Журнал',
+  btnAuto:'Автовыбор', btnCheck:'Проверить узлы', btnSubs:'Обновить подписки', btnGeo:'Обновить geo и списки',
+  msgAuto:'Ищу рабочие узлы…', msgCheck:'Проверяю задержку…', msgSubs:'Обновляю подписки…', msgGeo:'Обновляю geo-файлы и внешние списки…', done:'Готово.',
+  mainTarget:'Основной трафик VPN', via:'идёт через', noNode:'узел не выбран — автовыбор Xray', noNodes:'нет узлов — добавьте подписку',
+  manual:'вручную', down:'нет связи', lastOK:'последняя удачная проверка', day:'Доступность за сутки (по получасам)',
+  events:'История', noEvents:'Пока ничего не происходило.', never:'никогда',
+  xrayDown:'Xray не запущен!', notManaged:'конфиги Xray пока не тронуты (добавьте подписку)', geo:'Geo-файлы',
+  addSub:'+ Добавить подписку', saveSubs:'Сохранить подписки', saved:'Сохранено.', saving:'Сохраняю…',
+  subsHint:'Подходят ссылки vless/vmess/trojan/ss/hysteria2/wireguard/socks/http (списком или в base64), Clash/mihomo YAML, sing-box JSON и JSON Xray. Фильтр — регулярное выражение по имени узла, например (?i)Россия|Осталось. Информационные строки панелей пропускаются сами.',
+  phName:'Название', phUrl:'https://… ссылка на подписку', phEx:'Исключить узлы (регулярное выражение)', phIn:'Только узлы (необязательно)', phUA:'User-Agent (необяз.)',
+  del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
+  thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'активен', badUntil:'исключён до', select:'Выбрать', for:'для',
+  nodesHint:'Надёжность — доля удачных проверок загрузкой (активный узел проверяется каждую минуту, запасные — по очереди в фоне). При сбое сначала выбираются надёжные узлы, потом быстрые.',
+  listVPN:'Через VPN', listDirect:'Напрямую', saveApply:'Сохранить и применить', applying:'Проверяю и применяю…', applied:'Применено.', unsaved:'Есть несохранённые изменения. Переключиться без сохранения?',
+  listHint:'Одна запись на строку: example.com — с поддоменами, =example.com — только он, geosite:…, ext:файл.dat:…, IP или подсеть. Строка-ссылка https://… подключает внешний список (обновляется раз в сутки). Порядок: «Напрямую», затем группы, затем «Через VPN»; остальное — напрямую.',
+  groups:'Группы', groupsHint:'Группа отправляет свой список через свою часть узлов, например «YouTube через Нидерланды». Фильтр — регулярное выражение по имени узла. Если подходящих узлов нет, трафик группы идёт основной целью. Список группы редактируется во вкладке выше.',
+  addGroup:'+ Добавить группу', saveGroups:'Сохранить группы', phGName:'Название группы', phGFilter:'Фильтр узлов, например (?i)нидерланд|NL', matched:'подходящих узлов', noGroups:'Групп нет.',
+  routeTitle:'Куда пойдёт этот сайт?', routePh:'домен, ссылка или IP-адрес', routeBtn:'Проверить', rList:'Список', rRule:'Правило', rVia:'Сейчас через',
+  setMain:'Подписки и узлы', sInterval:'Обновлять подписки, часов', sUA:'User-Agent по умолчанию', sMax:'Узлов из одной подписки', sFallback:'Запасной outbound (если все узлы не работают)', none:'— нет —',
+  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки, секунд', sWFails:'Неудач подряд до переключения', sWBg:'Фоновая проверка запасных узлов, раз в N минут (0 — выкл.)', sWRestart:'Перезапускать XKeen, если Xray упал (не трогает, если запущен mihomo)', sWUrls:'Дополнительные адреса, которые должны открываться через узел (по одному в строке)',
+  sTgToken:'Токен бота', sTgDays:'Предупреждать за N дней до конца подписки', sTgPct:'…и при израсходовании % трафика', sTgSwitch:'Сообщать о каждом переключении узла', sTgUpdate:'Сообщать о новой версии xsub', sTgTest:'Отправить проверочное сообщение',
+  sTgHint:'Создайте бота у @BotFather и напишите ему что-нибудь; chat_id можно узнать у @userinfobot. Если Telegram недоступен напрямую, сообщения уходят через VPN.',
+  setAccess:'Доступ и журнал', sPass:'Новый пароль (пусто — не менять)', sLog:'Журнал', logTmp:'в оперативной памяти (/tmp)', logMem:'только на этой странице', logDisk:'на накопителе (/opt/var/log)', sWan:'Пускать на страницу не только из домашней сети',
+  saveSettings:'Сохранить настройки', restarting:'Сохранено, xsub перезапускается…',
+  setBackup:'Резервная копия', backupHint:'Все настройки, подписки, списки и группы одним файлом. В файле есть ссылки подписок и пароль — храните его как секрет.', backupBtn:'Скачать копию', restoreBtn:'Восстановить из файла', restoring:'Восстанавливаю…',
+  setUpdate:'Обновление', updCheck:'Проверить', updBtn:'Обновить', curVer:'Установлена версия', newVer:'Доступна версия', upToDate:'Это последняя версия.', updStarted:'Обновление запущено, страница перезагрузится сама…', updConfirm:'Обновить xsub сейчас?',
+  bannerNew:'Доступна новая версия xsub', bannerGo:'Обновить в настройках'
+},
+en: {
+  tabOverview:'Overview', tabSubs:'Subscriptions', tabNodes:'Nodes', tabLists:'Lists & groups', tabRoute:'Site check', tabSettings:'Settings', tabLog:'Log',
+  btnAuto:'Auto-select', btnCheck:'Check nodes', btnSubs:'Update subscriptions', btnGeo:'Update geo & lists',
+  msgAuto:'Looking for working nodes…', msgCheck:'Measuring latency…', msgSubs:'Updating subscriptions…', msgGeo:'Updating geo files and remote lists…', done:'Done.',
+  mainTarget:'Main VPN traffic', via:'goes via', noNode:'no node selected — Xray auto-select', noNodes:'no nodes — add a subscription',
+  manual:'manual', down:'no connection', lastOK:'last successful check', day:'Availability over 24 h (half-hour slots)',
+  events:'History', noEvents:'Nothing has happened yet.', never:'never',
+  xrayDown:'Xray is not running!', notManaged:'Xray configs untouched yet (add a subscription)', geo:'Geo files',
+  addSub:'+ Add subscription', saveSubs:'Save subscriptions', saved:'Saved.', saving:'Saving…',
+  subsHint:'Supported: vless/vmess/trojan/ss/hysteria2/wireguard/socks/http links (plain or base64), Clash/mihomo YAML, sing-box JSON and Xray JSON. The filter is a regular expression on node names, e.g. (?i)Russia|Remaining. Info entries from panels are skipped automatically.',
+  phName:'Name', phUrl:'https://… subscription link', phEx:'Exclude nodes (regular expression)', phIn:'Only nodes (optional)', phUA:'User-Agent (optional)',
+  del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
+  thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'active', badUntil:'excluded until', select:'Select', for:'for',
+  nodesHint:'Reliability is the share of successful download checks (the active node is checked every minute, spare nodes one by one in the background). On failure reliable nodes are tried first, then fast ones.',
+  listVPN:'Via VPN', listDirect:'Direct', saveApply:'Save and apply', applying:'Checking and applying…', applied:'Applied.', unsaved:'You have unsaved changes. Switch anyway?',
+  listHint:'One entry per line: example.com — with subdomains, =example.com — exact, geosite:…, ext:file.dat:…, IP or subnet. A line with an https://… link adds a remote list (updated daily). Order: Direct, then groups, then Via VPN; everything else goes direct.',
+  groups:'Groups', groupsHint:'A group sends its own list through its own subset of nodes, e.g. "YouTube via Netherlands". The filter is a regular expression on node names. If no nodes match, the group uses the main target. Edit the group list in the tab above.',
+  addGroup:'+ Add group', saveGroups:'Save groups', phGName:'Group name', phGFilter:'Node filter, e.g. (?i)netherlands|NL', matched:'matching nodes', noGroups:'No groups.',
+  routeTitle:'Where will this site go?', routePh:'domain, link or IP address', routeBtn:'Check', rList:'List', rRule:'Rule', rVia:'Currently via',
+  setMain:'Subscriptions and nodes', sInterval:'Update subscriptions every N hours', sUA:'Default User-Agent', sMax:'Nodes per subscription', sFallback:'Fallback outbound (if all nodes fail)', none:'— none —',
+  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval, seconds', sWFails:'Failures in a row before switching', sWBg:'Background check of spare nodes, every N minutes (0 — off)', sWRestart:'Restart XKeen if Xray crashed (skipped when mihomo runs)', sWUrls:'Extra addresses that must open through the node (one per line)',
+  sTgToken:'Bot token', sTgDays:'Warn N days before the subscription ends', sTgPct:'…and when % of traffic is used', sTgSwitch:'Notify about every node switch', sTgUpdate:'Notify about new xsub versions', sTgTest:'Send a test message',
+  sTgHint:'Create a bot with @BotFather and send it any message; get your chat_id from @userinfobot. If Telegram is blocked, messages go through the VPN.',
+  setAccess:'Access and log', sPass:'New password (empty — keep)', sLog:'Log', logTmp:'in RAM (/tmp)', logMem:'on this page only', logDisk:'on storage (/opt/var/log)', sWan:'Allow access from outside the home network',
+  saveSettings:'Save settings', restarting:'Saved, xsub is restarting…',
+  setBackup:'Backup', backupHint:'All settings, subscriptions, lists and groups in one file. It contains subscription links and the password — keep it secret.', backupBtn:'Download backup', restoreBtn:'Restore from file', restoring:'Restoring…',
+  setUpdate:'Update', updCheck:'Check', updBtn:'Update', curVer:'Installed version', newVer:'Available version', upToDate:'This is the latest version.', updStarted:'Update started, the page will reload by itself…', updConfirm:'Update xsub now?',
+  bannerNew:'A new xsub version is available', bannerGo:'Update in Settings'
+}};
+let lang = 'ru';
+try { lang = localStorage.getItem('xsub-lang') || ((navigator.language || 'ru').startsWith('ru') ? 'ru' : 'en'); } catch (e) {}
+const t = k => (I18N[lang] && I18N[lang][k]) || I18N.ru[k] || k;
 const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const when = t => (!t || t.startsWith('0001')) ? 'никогда' : new Date(t).toLocaleString('ru-RU');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const loc = () => lang === 'ru' ? 'ru-RU' : 'en-GB';
+const when = x => (!x || x.startsWith('0001')) ? t('never') : new Date(x).toLocaleString(loc());
+const TABS = ['overview','subs','nodes','lists','route','settings','log'];
+const TABKEY = {overview:'tabOverview',subs:'tabSubs',nodes:'tabNodes',lists:'tabLists',route:'tabRoute',settings:'tabSettings',log:'tabLog'};
+let curTab = 'overview', S = null;
+
+function applyI18n() {
+  document.documentElement.lang = lang;
+  $('lang').value = lang;
+  document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = t(e.dataset.i18n));
+  document.querySelectorAll('[data-i18n-ph]').forEach(e => e.placeholder = t(e.dataset.i18nPh));
+  $('tabs').innerHTML = TABS.map(k => '<button class="' + (k === curTab ? 'on' : '') + '" onclick="tab(\'' + k + '\')">' + t(TABKEY[k]) + '</button>').join('');
+}
+function setLang(l) { lang = l; try { localStorage.setItem('xsub-lang', l); } catch (e) {} applyI18n(); render(); renderLists(); renderSubs(); renderGroups(); }
+function tab(k) {
+  if (k !== 'lists' && dirty && !confirm(t('unsaved'))) return;
+  if (k !== 'lists') dirty = false;
+  curTab = k;
+  document.querySelectorAll('[data-tab]').forEach(e => e.classList.toggle('hide', e.dataset.tab !== k));
+  applyI18n();
+  if (k === 'settings') loadSettings();
+}
 
 async function post(url, body) {
   const r = await fetch(url, {method:'POST', headers:{'X-XSub':'1'}, body});
@@ -109,56 +315,114 @@ async function post(url, body) {
   if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
   return j;
 }
+function setMsg(el, cls, text) { $(el).className = cls; $(el).textContent = text; }
 
-async function act(url, text) {
-  document.querySelectorAll('section:first-of-type button').forEach(b => b.disabled = true);
-  $('msg').textContent = text;
-  try { await post(url); $('msg').textContent = 'Готово.'; }
-  catch (e) { $('msg').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
-  document.querySelectorAll('section:first-of-type button').forEach(b => b.disabled = false);
+async function act(url, key) {
+  document.querySelectorAll('[data-tab="overview"] button').forEach(b => b.disabled = true);
+  setMsg('msg', 'muted', t(key));
+  try { await post(url); setMsg('msg', 'ok', t('done')); } catch (e) { setMsg('msg', 'bad', e.message); }
+  document.querySelectorAll('[data-tab="overview"] button').forEach(b => b.disabled = false);
   load();
 }
 
-async function pick(tag) {
-  $('msg').textContent = 'Переключаю…';
-  try { await post('/api/select', JSON.stringify({Tag: tag})); $('msg').textContent = 'Узел закреплён вручную.'; }
-  catch (e) { $('msg').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+function strip(slots) {
+  const now = Date.now(), slot = 30 * 60 * 1000, start = Math.floor(now / slot) * slot - 47 * slot;
+  const map = {}; (slots || []).forEach(s => map[s.t * 1000] = s);
+  let h = '<div class="strip">';
+  for (let i = 0; i < 48; i++) {
+    const ts = start + i * slot, s = map[ts];
+    let c = 'var(--none)', title = new Date(ts).toLocaleTimeString(loc(), {hour:'2-digit', minute:'2-digit'});
+    if (s) {
+      const r = s.ok / (s.ok + s.fail);
+      c = r >= 0.99 ? 'var(--ok)' : r >= 0.5 ? 'var(--warn)' : 'var(--bad)';
+      title += ' — ' + s.ok + '/' + (s.ok + s.fail);
+    }
+    h += '<i style="background:' + c + '" title="' + esc(title) + '"></i>';
+  }
+  return h + '</div>';
+}
+
+function render() {
+  if (!S) return;
+  const s = S;
+  $('ver').textContent = s.version || '';
+  const newer = s.latest && newerThan(s.version, s.latest);
+  $('updBanner').classList.toggle('hide', !newer);
+  if (newer) $('updBanner').innerHTML = esc(t('bannerNew')) + ' ' + esc(s.latest) + ' — <a href="#" onclick="tab(\'settings\');return false">' + esc(t('bannerGo')) + '</a>';
+  // цели
+  const ts = s.targets || [];
+  $('targets').innerHTML = ts.length ? ts.map(tg => {
+    const name = tg.id ? tg.name : t('mainTarget');
+    const node = tg.active ? esc(tg.active_name) + (tg.pinned ? '<span class="badge warn">' + t('manual') + '</span>' : '')
+      : '<span class="warn">' + t('noNode') + '</span>';
+    return '<div class="card"><div class="muted">' + esc(name) + ' ' + t('via') + (tg.down ? '<span class="badge bad">' + t('down') + '</span>' : '') + '</div>' +
+      '<div class="big">' + node + '</div><div class="muted">' + t('lastOK') + ': ' + when(tg.last_ok) + '</div>' +
+      '<div class="muted" style="margin-top:6px">' + t('day') + '</div>' + strip(tg.slots) + '</div>';
+  }).join('') : '<div class="muted big">' + t('noNodes') + '</div>';
+  $('sum').textContent = t('geo') + ': ' + when(s.geo_at) + (s.xray_up ? '' : ' · ' + t('xrayDown')) + (s.managed ? '' : ' · ' + t('notManaged'));
+  $('errs').textContent = [s.apply_err, s.geo_err].concat(s.bad_nodes || []).filter(Boolean).join('\n');
+  $('warns').textContent = (s.list_warns || []).join('\n');
+  const ev = (s.events || []).slice().reverse().slice(0, 30);
+  $('events').innerHTML = ev.length ? ev.map(e => {
+    const cls = {down:'bad', up:'ok', switch:'warn', heal:'warn'}[e.kind] || 'muted';
+    return '<div><span class="muted">' + esc(new Date(e.t).toLocaleString(loc())) + '</span> <span class="' + cls + '">' + esc(e.text) + '</span></div>';
+  }).join('') : t('noEvents');
+  // узлы
+  const now = Date.now();
+  const tgName = tg => tg.id ? tg.name : t('mainTarget');
+  $('nodes').innerHTML = (s.nodes || []).map(n => {
+    const activeIn = ts.filter(tg => tg.active === n.tag);
+    const avail = ts.filter(tg => !tg.tags || tg.tags.includes(n.tag));
+    const bad = n.bad_until && new Date(n.bad_until).getTime() > now;
+    const lat = n.latency_ms > 0 ? n.latency_ms + ' ms' : (n.latency_ms < 0 ? '<span class="bad">—</span>' : '<span class="muted">·</span>');
+    const st = n.stats || {};
+    const tot = (st.ok || 0) + (st.fail || 0);
+    const rel = tot ? '<span class="' + (st.score >= 0.9 ? 'ok' : st.score >= 0.6 ? 'warn' : 'bad') + '">' + Math.round(st.score * 100) + '%</span> <span class="muted">(' + st.ok + '/' + tot + ')</span>' + strip(st.slots) : '<span class="muted">·</span>';
+    let state = activeIn.map(tg => '<span class="ok">' + t('active') + (ts.length > 1 ? ' — ' + esc(tgName(tg)) : '') + '</span>').join('<br>');
+    if (bad) state += (state ? '<br>' : '') + '<span class="bad">' + t('badUntil') + ' ' + new Date(n.bad_until).toLocaleTimeString(loc()) + '</span>';
+    if (n.last_err) state += '<div class="muted">' + esc(n.last_err) + '</div>';
+    const choices = avail.filter(tg => tg.active !== n.tag);
+    let btn = '';
+    if (choices.length === 1) btn = '<button onclick="pick(\'' + esc(choices[0].id) + '\',\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
+    else if (choices.length > 1) btn = '<select id="sel_' + esc(n.tag) + '">' + choices.map(tg => '<option value="' + esc(tg.id) + '">' + esc(tgName(tg)) + '</option>').join('') + '</select> <button onclick="pick($(\'sel_' + esc(n.tag) + '\').value,\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
+    return '<tr class="' + (activeIn.length ? 'active' : '') + '"><td>' + esc(n.name) + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
+      '</td><td style="min-width:150px">' + rel + '</td><td>' + state + '</td><td style="white-space:nowrap">' + btn + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">' + t('noNodes') + '</td></tr>';
+  $('log').textContent = (s.log || []).slice().reverse().join('\n');
+  if (!subsDirty && !$('subs').contains(document.activeElement)) renderSubs();
+  if (!groupsDirty && !$('groups').contains(document.activeElement)) { groups = JSON.parse(JSON.stringify(s.groups || [])); renderGroups(); }
+  renderListTabs();
+}
+
+function newerThan(a, b) {
+  const pa = (a || '').match(/(\d+)\.(\d+)\.(\d+)/), pb = (b || '').match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!pa || !pb) return false;
+  for (let i = 1; i <= 3; i++) { if (+pa[i] !== +pb[i]) return +pb[i] > +pa[i]; }
+  return false;
+}
+
+async function pick(target, tag) {
+  setMsg('msg', 'muted', '…');
+  try { await post('/api/select', JSON.stringify({Target: target, Tag: tag})); setMsg('msg', 'ok', t('done')); }
+  catch (e) { setMsg('msg', 'bad', e.message); }
   load();
 }
 
 async function load() {
-  let s;
-  try { s = await (await fetch('/api/status')).json(); } catch (e) { $('active').textContent = 'нет связи с xsub'; return; }
-  $('active').innerHTML = s.active
-    ? esc(s.active_name) + (s.pinned ? ' <span class="warn">(вручную)</span>' : '')
-    : (s.nodes && s.nodes.length ? '<span class="warn">узел не выбран — автовыбор Xray</span>' : '<span class="muted">нет узлов</span>');
-  $('ver').textContent = s.version || '';
-  $('sub').textContent = 'Geo-файлы: ' + when(s.geo_at) + ' · последняя удачная проверка: ' + when(s.last_ok) +
-    (s.xray_up ? '' : ' · Xray не запущен!') + (s.managed ? '' : ' · конфиги Xray пока не тронуты (добавьте подписку)');
-  $('errs').textContent = [s.apply_err && 'Конфиг: ' + s.apply_err, s.geo_err && 'Geo: ' + s.geo_err].concat(s.bad_nodes || []).filter(Boolean).join('\n');
-  lastSubs = s.subs || [];
-  if (!subsDirty && !$('subs').contains(document.activeElement)) renderSubs();
-  const now = Date.now();
-  $('nodes').innerHTML = (s.nodes || []).map(n => {
-    const bad = n.bad_until && new Date(n.bad_until).getTime() > now;
-    const lat = n.latency_ms > 0 ? n.latency_ms + ' мс' : (n.latency_ms < 0 ? '<span class="bad">нет</span>' : '<span class="muted">—</span>');
-    const st = bad ? '<span class="bad">исключён до ' + new Date(n.bad_until).toLocaleTimeString('ru-RU') + '</span>'
-      : n.tag === s.active ? '<span class="ok">активен</span>' : '';
-    const err = n.last_err ? '<div class="muted">' + esc(n.last_err) + '</div>' : '';
-    return '<tr class="' + (n.tag === s.active ? 'active' : '') + '"><td>' + esc(n.name) + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
-      '</td><td>' + st + err + '</td><td>' + (n.tag === s.active ? '' : '<button onclick="pick(\'' + esc(n.tag) + '\')">Выбрать</button>') + '</td></tr>';
-  }).join('') || '<tr><td colspan="4" class="muted">Узлов пока нет — добавьте подписку.</td></tr>';
-  $('log').textContent = (s.log || []).slice().reverse().join('\n');
+  try { S = await (await fetch('/api/status')).json(); } catch (e) { return; }
+  render();
 }
 
+// ---------- подписки ----------
+let subs = [], subsDirty = false;
 const gb = n => (n / 1073741824).toFixed(n < 10737418240 ? 2 : 1);
 function subState(st) {
-  if (!st) return '<span class="muted">ещё не обновлялась</span>';
-  let parts = ['узлов: ' + st.nodes, 'обновлена: ' + when(st.at) + (st.cached ? ' (сохранённая копия)' : '')];
+  if (!st) return '<span class="muted">' + t('notYet') + '</span>';
+  let parts = [t('nodesN') + ': ' + st.nodes, t('updated') + ': ' + when(st.at) + (st.cached ? ' (' + t('cached') + ')' : '')];
   if (st.info) {
     const used = st.info.upload + st.info.download;
-    parts.push('трафик: ' + gb(used) + (st.info.total ? ' из ' + gb(st.info.total) : '') + ' ГБ');
-    if (st.info.expire) parts.push('до ' + new Date(st.info.expire * 1000).toLocaleDateString('ru-RU'));
+    parts.push(t('traffic') + ': ' + gb(used) + (st.info.total ? ' ' + t('of') + ' ' + gb(st.info.total) : '') + ' ' + t('gb'));
+    if (st.info.expire) parts.push(t('until') + ' ' + new Date(st.info.expire * 1000).toLocaleDateString(loc()));
   }
   let h = '<span class="muted">' + parts.map(esc).join(' · ') + '</span>';
   if (st.err) h += '<div class="bad">' + esc(st.err) + '</div>';
@@ -166,55 +430,177 @@ function subState(st) {
   return h;
 }
 function renderSubs() {
+  const states = (S && S.subs) || [];
   $('subs').innerHTML = subs.map((s, i) => {
-    const st = (lastSubs.find(x => x.url === s.url) || {}).state;
-    return '<div class="sub"><div class="row">' +
-      '<input class="n" placeholder="Название" value="' + esc(s.name) + '" oninput="subs[' + i + '].name=this.value;subsDirty=true">' +
-      '<input placeholder="https://… ссылка на подписку" value="' + esc(s.url) + '" oninput="subs[' + i + '].url=this.value;subsDirty=true">' +
-      '<button onclick="subs.splice(' + i + ',1);subsDirty=true;renderSubs()">Удалить</button></div>' +
-      '<div class="row" style="margin-top:6px"><input placeholder="Исключить узлы (регулярное выражение)" value="' + esc(s.exclude || '') + '" oninput="subs[' + i + '].exclude=this.value;subsDirty=true">' +
-      '<input placeholder="Только узлы (необязательно)" value="' + esc(s.include || '') + '" oninput="subs[' + i + '].include=this.value;subsDirty=true">' +
-      '<input class="n" placeholder="User-Agent (необяз.)" value="' + esc(s.user_agent || '') + '" oninput="subs[' + i + '].user_agent=this.value;subsDirty=true"></div>' +
+    const st = (states.find(x => x.url === s.url) || {}).state;
+    const inp = (k, ph, cls) => '<input class="' + (cls || '') + '" placeholder="' + esc(t(ph)) + '" value="' + esc(s[k] || '') + '" oninput="subs[' + i + '].' + k + '=this.value;subsDirty=true">';
+    return '<div class="card"><div class="row">' + inp('name', 'phName', 'n') + inp('url', 'phUrl') +
+      '<button onclick="subs.splice(' + i + ',1);subsDirty=true;renderSubs()">' + t('del') + '</button></div>' +
+      '<div class="row" style="margin-top:6px">' + inp('exclude', 'phEx') + inp('include', 'phIn') + inp('user_agent', 'phUA', 'n') + '</div>' +
       '<div style="margin-top:6px">' + subState(st) + '</div></div>';
-  }).join('') || '<div class="muted">Подписок пока нет — добавьте ссылку.</div>';
+  }).join('') || '<div class="muted">' + t('noSubs') + '</div>';
 }
 function addSub() { subs.push({name: '', url: ''}); subsDirty = true; renderSubs(); }
 async function saveSubs() {
-  $('ssave').disabled = true; $('smsg').className = 'muted'; $('smsg').textContent = 'Сохраняю…';
+  $('ssave').disabled = true; setMsg('smsg', 'muted', t('saving'));
   try {
     await post('/api/subs', JSON.stringify(subs.filter(s => s.url.trim() !== '')));
-    subsDirty = false; $('smsg').className = 'ok'; $('smsg').textContent = 'Сохранено, обновляю подписки…';
-    subs = await (await fetch('/api/subs')).json(); renderSubs();
-  } catch (e) { $('smsg').className = 'bad'; $('smsg').textContent = e.message; }
+    subsDirty = false; setMsg('smsg', 'ok', t('saved'));
+    subs = await (await fetch('/api/subs')).json() || []; renderSubs();
+  } catch (e) { setMsg('smsg', 'bad', e.message); }
   $('ssave').disabled = false; setTimeout(load, 3000);
 }
 
-async function loadList(name) {
-  lists[name] = await (await fetch('/api/list?name=' + name)).text();
+// ---------- списки ----------
+let curList = 'vpn', listText = {}, dirty = false;
+function listNames() {
+  const g = ((S && S.groups) || []).map(x => ({id: x.id, name: x.name}));
+  return [{id: 'vpn', name: t('listVPN')}, {id: 'direct', name: t('listDirect')}].concat(g);
 }
-function tab(name) {
-  if (dirty && !confirm('Есть несохранённые изменения. Переключиться без сохранения?')) return;
-  cur = name; dirty = false;
-  $('t-vpn').classList.toggle('on', name === 'vpn');
-  $('t-direct').classList.toggle('on', name === 'direct');
-  $('list').value = lists[name] || ''; $('lmsg').textContent = '';
+function renderListTabs() {
+  const names = listNames();
+  if (!names.find(x => x.id === curList)) { curList = 'vpn'; showList(); }
+  $('listTabs').innerHTML = names.map(x => '<button class="' + (x.id === curList ? 'on' : '') + '" onclick="openList(\'' + esc(x.id) + '\')">' + esc(x.name) + '</button>').join('');
 }
+function renderLists() { renderListTabs(); }
+async function fetchList(id) { listText[id] = await (await fetch('/api/list?name=' + encodeURIComponent(id))).text(); }
+async function openList(id) {
+  if (dirty && !confirm(t('unsaved'))) return;
+  curList = id; dirty = false;
+  if (listText[id] === undefined) await fetchList(id);
+  showList(); renderListTabs();
+}
+function showList() { $('list').value = listText[curList] || ''; setMsg('lmsg', 'muted', ''); }
 $('list').addEventListener('input', () => dirty = true);
-
-async function save() {
-  $('save').disabled = true; $('lmsg').className = 'muted'; $('lmsg').textContent = 'Проверяю и применяю…';
+async function saveList() {
+  $('lsave').disabled = true; setMsg('lmsg', 'muted', t('applying'));
   try {
-    await post('/api/list?name=' + cur, $('list').value);
-    lists[cur] = $('list').value; dirty = false;
-    $('lmsg').className = 'ok'; $('lmsg').textContent = 'Применено.';
-  } catch (e) { $('lmsg').className = 'bad'; $('lmsg').textContent = e.message; }
-  $('save').disabled = false; load();
+    await post('/api/list?name=' + encodeURIComponent(curList), $('list').value);
+    listText[curList] = $('list').value; dirty = false; setMsg('lmsg', 'ok', t('applied'));
+  } catch (e) { setMsg('lmsg', 'bad', e.message); }
+  $('lsave').disabled = false; load();
+}
+
+// ---------- группы ----------
+let groups = [], groupsDirty = false;
+function renderGroups() {
+  const ts = (S && S.targets) || [], nodes = (S && S.nodes) || [];
+  $('groups').innerHTML = groups.map((g, i) => {
+    let cnt = '';
+    if (g.filter !== undefined) {
+      try { const re = new RegExp(g.filter.replace(/^\(\?i\)/, ''), g.filter.startsWith('(?i)') ? 'i' : ''); cnt = nodes.filter(n => re.test(n.name)).length; } catch (e) { cnt = '?'; }
+    }
+    return '<div class="card"><div class="row">' +
+      '<input class="n" placeholder="' + esc(t('phGName')) + '" value="' + esc(g.name) + '" oninput="groups[' + i + '].name=this.value;groupsDirty=true">' +
+      '<input placeholder="' + esc(t('phGFilter')) + '" value="' + esc(g.filter) + '" oninput="groups[' + i + '].filter=this.value;groupsDirty=true;renderGroupCount(' + i + ')">' +
+      '<button onclick="groups.splice(' + i + ',1);groupsDirty=true;renderGroups()">' + t('del') + '</button></div>' +
+      '<div class="muted" id="gcnt' + i + '" style="margin-top:6px">' + t('matched') + ': ' + cnt + '</div></div>';
+  }).join('') || '<div class="muted">' + t('noGroups') + '</div>';
+}
+function renderGroupCount(i) {
+  const g = groups[i], nodes = (S && S.nodes) || [];
+  let cnt; try { const re = new RegExp(g.filter.replace(/^\(\?i\)/, ''), g.filter.startsWith('(?i)') ? 'i' : ''); cnt = nodes.filter(n => re.test(n.name)).length; } catch (e) { cnt = '?'; }
+  $('gcnt' + i).textContent = t('matched') + ': ' + cnt;
+}
+function addGroup() { groups.push({id: '', name: '', filter: ''}); groupsDirty = true; renderGroups(); }
+async function saveGroups() {
+  $('gsave').disabled = true; setMsg('gmsg', 'muted', t('applying'));
+  try {
+    await post('/api/groups', JSON.stringify(groups));
+    groupsDirty = false; setMsg('gmsg', 'ok', t('applied'));
+  } catch (e) { setMsg('gmsg', 'bad', e.message); }
+  $('gsave').disabled = false; await load();
+}
+
+// ---------- проверка сайта ----------
+async function checkRoute() {
+  const q = $('rq').value.trim(); if (!q) return;
+  $('rres').innerHTML = '…';
+  try {
+    const r = await (await fetch('/api/route?q=' + encodeURIComponent(q))).json();
+    const cls = r.route === 'direct' ? 'muted' : 'ok';
+    let h = '<div class="card"><div class="muted">' + esc(r.input) + '</div><div class="big ' + cls + '">' + esc(r.target) + '</div>';
+    if (r.list) h += '<div>' + t('rList') + ': ' + esc(r.list) + '</div>';
+    if (r.rule) h += '<div>' + t('rRule') + ': <code>' + esc(r.rule) + '</code></div>';
+    if (r.via) h += '<div>' + t('rVia') + ': <b>' + esc(r.via) + '</b></div>';
+    (r.notes || []).forEach(n => h += '<div class="muted" style="margin-top:4px">' + esc(n) + '</div>');
+    $('rres').innerHTML = h + '</div>';
+  } catch (e) { $('rres').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+}
+
+// ---------- настройки ----------
+let SET = null;
+async function loadSettings() {
+  try { SET = await (await fetch('/api/settings')).json(); } catch (e) { return; }
+  const s = SET.settings, w = s.watchdog, tg = s.telegram;
+  const v = (id, x) => $(id).value = x ?? '', c = (id, x) => $(id).checked = !!x;
+  v('s_sub_interval_hours', s.sub_interval_hours); v('s_user_agent', s.user_agent); v('s_max_nodes', s.max_nodes);
+  $('s_fallback_tag').innerHTML = '<option value="">' + esc(t('none')) + '</option>' + (SET.outbounds || []).sort().map(o => '<option>' + esc(o) + '</option>').join('');
+  v('s_fallback_tag', s.xray.fallback_tag);
+  c('s_w_enabled', w.enabled); v('s_w_interval_sec', w.interval_sec); v('s_w_fails_to_switch', w.fails_to_switch);
+  v('s_w_background_probe_min', w.background_probe_min); c('s_w_restart_xray', w.restart_xray); v('s_w_check_urls', (w.check_urls || []).join('\n'));
+  v('s_tg_token', tg.token); v('s_tg_chat_id', tg.chat_id); v('s_tg_expire_days', tg.expire_days); v('s_tg_traffic_pct', tg.traffic_pct);
+  c('s_tg_on_switch', tg.on_switch); c('s_tg_on_update', tg.on_update);
+  v('s_password', ''); c('s_ui_allow_wan', s.ui_allow_wan);
+  const lf = $('s_log_file'); if (![...lf.options].some(o => o.value === s.log_file)) lf.add(new Option(s.log_file, s.log_file)); v('s_log_file', s.log_file);
+  $('uver').textContent = t('curVer') + ': ' + ((S && S.version) || '') + (S && S.latest ? ' · ' + t('newVer') + ': ' + S.latest : '');
+}
+function collectSettings() {
+  const n = id => parseInt($(id).value, 10) || 0, v = id => $(id).value, c = id => $(id).checked;
+  return {
+    password: v('s_password'), sub_interval_hours: n('s_sub_interval_hours'), user_agent: v('s_user_agent'), max_nodes: n('s_max_nodes'),
+    log_file: v('s_log_file'), ui_allow_wan: c('s_ui_allow_wan'), xray: {fallback_tag: v('s_fallback_tag')},
+    watchdog: {enabled: c('s_w_enabled'), interval_sec: n('s_w_interval_sec'), fails_to_switch: n('s_w_fails_to_switch'),
+      background_probe_min: n('s_w_background_probe_min'), restart_xray: c('s_w_restart_xray'),
+      check_urls: v('s_w_check_urls').split('\n').map(x => x.trim()).filter(Boolean)},
+    telegram: {token: v('s_tg_token'), chat_id: v('s_tg_chat_id'), expire_days: n('s_tg_expire_days'), traffic_pct: n('s_tg_traffic_pct'),
+      on_switch: c('s_tg_on_switch'), on_update: c('s_tg_on_update')}
+  };
+}
+async function saveSettings() {
+  $('setsave').disabled = true; setMsg('setmsg', 'muted', t('saving'));
+  try { await post('/api/settings', JSON.stringify(collectSettings())); setMsg('setmsg', 'ok', t('restarting')); setTimeout(() => location.reload(), 4000); }
+  catch (e) { setMsg('setmsg', 'bad', e.message); $('setsave').disabled = false; }
+}
+async function tgTest() {
+  setMsg('tgmsg', 'muted', '…');
+  try { await post('/api/telegram/test'); setMsg('tgmsg', 'ok', t('done')); } catch (e) { setMsg('tgmsg', 'bad', e.message); }
+}
+async function restore(inp) {
+  const f = inp.files[0]; if (!f) return;
+  setMsg('bmsg', 'muted', t('restoring'));
+  try { await post('/api/restore', await f.text()); setMsg('bmsg', 'ok', t('restarting')); setTimeout(() => location.reload(), 4000); }
+  catch (e) { setMsg('bmsg', 'bad', e.message); }
+  inp.value = '';
+}
+async function updCheck() {
+  $('uver').textContent = '…';
+  try {
+    const r = await post('/api/update/check');
+    $('uver').textContent = t('curVer') + ': ' + ((S && S.version) || '') + ' · ' + (r.newer ? t('newVer') + ': ' + r.latest : t('upToDate'));
+    if (S) { S.latest = r.latest; render(); }
+  } catch (e) { $('uver').textContent = e.message; }
+}
+async function doUpdate() {
+  if (!confirm(t('updConfirm'))) return;
+  $('updBtn').disabled = true;
+  try {
+    await post('/api/update');
+    $('ulog').textContent = t('updStarted');
+    const iv = setInterval(async () => {
+      try { const l = await (await fetch('/api/update/log')).text(); if (l) $('ulog').textContent = l; } catch (e) {}
+    }, 2000);
+    setTimeout(() => { clearInterval(iv); location.reload(); }, 60000);
+  } catch (e) { $('ulog').textContent = e.message; $('updBtn').disabled = false; }
 }
 
 (async () => {
-  await Promise.all([loadList('vpn'), loadList('direct')]);
-  subs = await (await fetch('/api/subs')).json() || [];
-  tab('vpn'); load(); setInterval(load, 10000);
+  applyI18n(); tab('overview');
+  await load();
+  try { subs = await (await fetch('/api/subs')).json() || []; } catch (e) {}
+  renderSubs();
+  await fetchList('vpn'); showList(); renderListTabs();
+  setInterval(load, 10000);
 })();
 </script>
 </body>

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,96 +17,6 @@ const (
 	testPrefix  = "xsub-test-"
 	ownDirect   = "xsub-direct"
 )
-
-// Lists — разобранные vpn.txt / direct.txt.
-type Lists struct {
-	VPNDomains, VPNIPs       []string
-	DirectDomains, DirectIPs []string
-}
-
-// parseList переводит строки файла в правила Xray. Возвращает ошибки по строкам.
-func parseList(text string) (domains, ips []string, errs []string) {
-	for i, raw := range strings.Split(text, "\n") {
-		line := raw
-		if j := strings.Index(line, "#"); j >= 0 {
-			line = line[:j]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		low := strings.ToLower(line)
-		switch {
-		case strings.HasPrefix(low, "ip:"):
-			ips = append(ips, strings.TrimSpace(line[3:]))
-		case strings.HasPrefix(low, "geoip:"):
-			ips = append(ips, low)
-		case strings.HasPrefix(low, "regexp:"), strings.HasPrefix(low, "ext:"):
-			domains = append(domains, line) // регистр в regexp и именах файлов важен
-		case strings.HasPrefix(low, "geosite:"), strings.HasPrefix(low, "domain:"),
-			strings.HasPrefix(low, "full:"), strings.HasPrefix(low, "keyword:"):
-			domains = append(domains, low)
-		case strings.HasPrefix(line, "="):
-			d := strings.TrimSpace(low[1:])
-			if !validDomain(d) {
-				errs = append(errs, fmt.Sprintf("строка %d: %q — не похоже на домен", i+1, raw))
-				continue
-			}
-			domains = append(domains, "full:"+d)
-		default:
-			if _, _, err := net.ParseCIDR(line); err == nil {
-				ips = append(ips, line)
-				continue
-			}
-			if net.ParseIP(line) != nil {
-				ips = append(ips, line)
-				continue
-			}
-			d := strings.TrimPrefix(strings.TrimPrefix(low, "*."), ".")
-			if !validDomain(d) {
-				errs = append(errs, fmt.Sprintf("строка %d: %q — не похоже на домен", i+1, raw))
-				continue
-			}
-			domains = append(domains, "domain:"+d)
-		}
-	}
-	return
-}
-
-func validDomain(d string) bool {
-	if d == "" || len(d) > 253 {
-		return false
-	}
-	for _, r := range d {
-		if !(r == '.' || r == '-' || r == '_' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r > 127) {
-			return false
-		}
-	}
-	return !strings.HasPrefix(d, ".") && !strings.HasSuffix(d, ".") && !strings.Contains(d, "..")
-}
-
-func readLists(c *Config) (Lists, []string, error) {
-	var l Lists
-	var errs []string
-	vb, err := os.ReadFile(c.path("vpn.txt"))
-	if err != nil && !os.IsNotExist(err) {
-		return l, nil, err
-	}
-	db, err := os.ReadFile(c.path("direct.txt"))
-	if err != nil && !os.IsNotExist(err) {
-		return l, nil, err
-	}
-	var e1, e2 []string
-	l.VPNDomains, l.VPNIPs, e1 = parseList(string(vb))
-	l.DirectDomains, l.DirectIPs, e2 = parseList(string(db))
-	for _, e := range e1 {
-		errs = append(errs, "vpn.txt: "+e)
-	}
-	for _, e := range e2 {
-		errs = append(errs, "direct.txt: "+e)
-	}
-	return l, errs, nil
-}
 
 func testTag(n Node) string { return testPrefix + strings.TrimPrefix(n.Tag, "node-") }
 
@@ -244,22 +153,19 @@ func (e Env) check(c *Config) error {
 }
 
 // generate собирает содержимое 05_routing.json и 07_xsub.json.
-func generate(c *Config, env Env, nodes []Node, l Lists) (routing, xsub []byte, err error) {
+func generate(c *Config, env Env, nodes []Node, rs RouteSet) (routing, xsub []byte, err error) {
 	if err := env.check(c); err != nil {
 		return nil, nil, err
 	}
 	x := c.Xray
 	directTag, ownDir := env.directTag(c)
 	fallback := env.fallbackTag(c)
-
-	// Куда вести «VPN»-трафик: балансировщик по узлам подписки или запасной outbound.
-	var target map[string]any
-	switch {
-	case len(nodes) > 0:
-		target = map[string]any{"balancerTag": x.Balancer}
-	case fallback != "":
-		target = map[string]any{"outboundTag": fallback}
+	var groups []Group
+	for _, g := range rs.Groups {
+		groups = append(groups, g.Group)
 	}
+	defs := targetDefs(c, nodes, groups)
+
 	rule := func(match map[string]any, t map[string]any) map[string]any {
 		r := map[string]any{"type": "field"}
 		for k, v := range match {
@@ -271,10 +177,34 @@ func generate(c *Config, env Env, nodes []Node, l Lists) (routing, xsub []byte, 
 		return r
 	}
 	direct := map[string]any{"outboundTag": directTag}
+	// Цель основного «VPN»-трафика: балансировщик по узлам подписок или запасной outbound.
+	var mainTarget map[string]any
+	switch {
+	case len(nodes) > 0:
+		mainTarget = map[string]any{"balancerTag": x.Balancer}
+	case fallback != "":
+		mainTarget = map[string]any{"outboundTag": fallback}
+	}
+	targetOf := func(d TargetDef) map[string]any {
+		if d.ID == "" || d.Empty {
+			return mainTarget
+		}
+		return map[string]any{"balancerTag": d.Balancer}
+	}
 
-	var rules []any
-	if target != nil {
-		rules = append(rules, rule(map[string]any{"inboundTag": []string{probeTag}}, target))
+	var rules, inbounds []any
+	for _, d := range defs {
+		if d.ID != "" && d.Empty {
+			continue // у группы нет узлов — проверять нечего, её трафик идёт основной целью
+		}
+		if t := targetOf(d); t != nil {
+			tag := probeTag
+			if d.ID != "" {
+				tag += "-" + d.ID
+			}
+			rules = append(rules, rule(map[string]any{"inboundTag": []string{tag}}, t))
+			inbounds = append(inbounds, socksIn(tag, d.ProbePort))
+		}
 	}
 	for _, n := range nodes {
 		rules = append(rules, rule(map[string]any{"inboundTag": []string{testTag(n)}}, map[string]any{"outboundTag": n.Tag}))
@@ -285,44 +215,52 @@ func generate(c *Config, env Env, nodes []Node, l Lists) (routing, xsub []byte, 
 			force = append(force, t)
 		}
 	}
-	if target != nil && len(force) > 0 {
-		rules = append(rules, rule(map[string]any{"inboundTag": force}, target))
+	if mainTarget != nil && len(force) > 0 {
+		rules = append(rules, rule(map[string]any{"inboundTag": force}, mainTarget))
 	}
-	if len(l.DirectDomains) > 0 {
-		rules = append(rules, rule(map[string]any{"domain": l.DirectDomains}, direct))
+	addRules := func(r Rules, t map[string]any) {
+		if t == nil {
+			return
+		}
+		if len(r.Domains) > 0 {
+			rules = append(rules, rule(map[string]any{"domain": r.Domains}, t))
+		}
+		if len(r.IPs) > 0 {
+			rules = append(rules, rule(map[string]any{"ip": r.IPs}, t))
+		}
 	}
-	if len(l.DirectIPs) > 0 {
-		rules = append(rules, rule(map[string]any{"ip": l.DirectIPs}, direct))
+	addRules(rs.Direct, direct)
+	for i, g := range rs.Groups {
+		addRules(g.Rules, targetOf(defs[i+1]))
 	}
-	if target != nil && len(l.VPNDomains) > 0 {
-		rules = append(rules, rule(map[string]any{"domain": l.VPNDomains}, target))
-	}
-	if target != nil && len(l.VPNIPs) > 0 {
-		rules = append(rules, rule(map[string]any{"ip": l.VPNIPs}, target))
-	}
+	addRules(rs.VPN, mainTarget)
 	rules = append(rules, rule(map[string]any{"network": "tcp,udp"}, direct))
 
 	rt := map[string]any{"domainStrategy": "AsIs", "rules": rules}
 	if len(nodes) > 0 {
-		bal := map[string]any{
-			"tag":      x.Balancer,
-			"selector": []string{"node-"},
-			"strategy": map[string]any{"type": "leastPing"},
+		var bals []any
+		for _, d := range defs {
+			if d.Empty && d.ID != "" {
+				continue
+			}
+			sel := []string{"node-"}
+			if d.ID != "" {
+				sel = d.Tags
+			}
+			bal := map[string]any{"tag": d.Balancer, "selector": sel, "strategy": map[string]any{"type": "leastPing"}}
+			if fallback != "" {
+				bal["fallbackTag"] = fallback
+			}
+			bals = append(bals, bal)
 		}
-		if fallback != "" {
-			bal["fallbackTag"] = fallback
-		}
-		rt["balancers"] = []any{bal}
+		rt["balancers"] = bals
 	}
 	routing, err = marshal(map[string]any{"routing": rt})
 	if err != nil {
 		return
 	}
 
-	var inbounds, outbounds []any
-	if target != nil {
-		inbounds = append(inbounds, socksIn(probeTag, x.ProbePort))
-	}
+	var outbounds []any
 	for i, n := range nodes {
 		inbounds = append(inbounds, socksIn(testTag(n), x.TestPortBase+i))
 		outbounds = append(outbounds, n.Outbound)

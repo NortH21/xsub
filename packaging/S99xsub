@@ -5,7 +5,7 @@ export PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 BIN=/opt/sbin/xsub
 CONF=/opt/etc/xsub/config.json
 PIDFILE=/var/run/xsub.pid
-OUT=/opt/var/log/xsub.out
+OUT=/tmp/xsub.out   # в оперативной памяти
 
 running() {
   [ -f "$PIDFILE" ] || return 1

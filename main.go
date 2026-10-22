@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-var version = "dev"
+var (
+	version     = "dev"
+	defaultRepo = "furriest/xsub" // при сборке: -X main.defaultRepo=владелец/репозиторий
+)
 
 const defaultVPN = `# Через VPN. Одна запись на строку, комментарии после #.
 #   example.com            — домен со всеми поддоменами
@@ -51,6 +54,10 @@ const defaultConfigJSON = `{
   "listen": "0.0.0.0:8099",
   "user": "admin",
   "password": "%s",
+
+  // Журнал: /tmp — оперативная память (не изнашивает флеш), "" — только на веб-странице.
+  // Чтобы журнал переживал перезагрузку: "/opt/var/log/xsub.log".
+  "log_file": "/tmp/xsub.log",
 
   // Подписки добавляются на веб-странице (хранятся в subscriptions.json).
   "sub_interval_hours": 6,
@@ -154,7 +161,7 @@ func main() {
 		return
 	}
 
-	lg.path = c.LogFile
+	lg.path, lg.maxSize = c.LogFile, int64(c.LogMaxKB)<<10
 	if _, err := os.Stat(c.Xray.Bin); err != nil {
 		fmt.Fprintln(os.Stderr, "xsub: не найден xray:", c.Xray.Bin)
 		os.Exit(1)
@@ -179,7 +186,13 @@ func main() {
 	go func() {
 		a.startup()
 		go a.subLoop(ctx)
+		go a.healLoop(ctx)
 		go every(ctx, time.Duration(c.Geo.IntervalHours)*time.Hour, func() { a.updateGeo(true) })
+		go func() {
+			time.Sleep(2 * time.Minute)
+			a.checkUpdate()
+			every(ctx, 24*time.Hour, a.checkUpdate)
+		}()
 		a.w.loop(ctx)
 	}()
 

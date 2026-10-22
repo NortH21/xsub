@@ -13,7 +13,8 @@ type Config struct {
 	Listen   string `json:"listen"`
 	User     string `json:"user"`
 	Password string `json:"password"`
-	LogFile  string `json:"log_file"`
+	LogFile  string `json:"log_file"`   // "" — журнал только в памяти (на веб-странице)
+	LogMaxKB int    `json:"log_max_kb"` // размер файла журнала до ротации
 
 	SubIntervalHours int    `json:"sub_interval_hours"`
 	MaxNodes         int    `json:"max_nodes"` // на одну подписку
@@ -22,9 +23,13 @@ type Config struct {
 	// Старый формат (одна подписка в config.json) — переносится в subscriptions.json.
 	Legacy *Subscription `json:"subscription,omitempty"`
 
-	Xray  XrayConfig  `json:"xray"`
-	Watch WatchConfig `json:"watchdog"`
-	Geo   GeoConfig   `json:"geo"`
+	UIAllowWAN bool   `json:"ui_allow_wan"` // пускать на страницу не только из домашней сети
+	UpdateRepo string `json:"update_repo"`  // откуда проверять новые версии (владелец/репозиторий)
+
+	Xray     XrayConfig     `json:"xray"`
+	Watch    WatchConfig    `json:"watchdog"`
+	Geo      GeoConfig      `json:"geo"`
+	Telegram TelegramConfig `json:"telegram"`
 
 	dir string // папка конфига: там же списки, подписки, кэш, бэкапы
 }
@@ -68,6 +73,21 @@ type WatchConfig struct {
 	BadCooldownMin int      `json:"bad_cooldown_min"`
 	LatencyURL     string   `json:"latency_url"`
 	DirectURLs     []string `json:"direct_urls"`
+	// Адреса, которые тоже должны открываться через узел (например, нужный заблокированный сайт).
+	CheckURLs []string `json:"check_urls"`
+	// Раз в сколько минут проверять загрузкой один из запасных узлов (0 — не проверять).
+	BackgroundProbeMin int `json:"background_probe_min"`
+	// Запускать XKeen заново, если ядро Xray пропало (и не запущен mihomo).
+	RestartXray bool `json:"restart_xray"`
+}
+
+type TelegramConfig struct {
+	Token      string `json:"token"`
+	ChatID     string `json:"chat_id"`
+	ExpireDays int    `json:"expire_days"` // предупреждать, когда до конца подписки осталось столько дней
+	TrafficPct int    `json:"traffic_pct"` // …и когда израсходовано столько процентов трафика
+	OnSwitch   bool   `json:"on_switch"`   // сообщать о каждом переключении узла
+	OnUpdate   bool   `json:"on_update"`   // сообщать о новой версии xsub
 }
 
 type GeoFile struct {
@@ -84,7 +104,8 @@ func defaultConfig() *Config {
 	return &Config{
 		Listen:           "0.0.0.0:8099",
 		User:             "admin",
-		LogFile:          "/opt/var/log/xsub.log",
+		LogFile:          "/tmp/xsub.log", // /tmp — оперативная память
+		LogMaxKB:         256,
 		SubIntervalHours: 6,
 		MaxNodes:         60,
 		UserAgent:        "v2rayN/7.0",
@@ -104,17 +125,21 @@ func defaultConfig() *Config {
 			ObservatoryEvery:   "2m",
 		},
 		Watch: WatchConfig{
-			Enabled:        true,
-			IntervalSec:    60,
-			TestURL:        "https://speed.cloudflare.com/__down?bytes=65536",
-			TestBytes:      65536,
-			TimeoutSec:     10,
-			FailsToSwitch:  2,
-			MaxTry:         20,
-			BadCooldownMin: 30,
-			LatencyURL:     "https://www.gstatic.com/generate_204",
-			DirectURLs:     []string{"https://ya.ru", "https://www.google.com", "https://1.1.1.1"},
+			Enabled:            true,
+			IntervalSec:        60,
+			TestURL:            "https://speed.cloudflare.com/__down?bytes=65536",
+			TestBytes:          65536,
+			TimeoutSec:         10,
+			FailsToSwitch:      2,
+			MaxTry:             20,
+			BadCooldownMin:     30,
+			LatencyURL:         "https://www.gstatic.com/generate_204",
+			DirectURLs:         []string{"https://ya.ru", "https://www.google.com", "https://1.1.1.1"},
+			BackgroundProbeMin: 5,
+			RestartXray:        true,
 		},
+		Telegram:   TelegramConfig{ExpireDays: 3, TrafficPct: 90, OnSwitch: true, OnUpdate: true},
+		UpdateRepo: defaultRepo,
 		Geo: GeoConfig{
 			IntervalHours: 24,
 			Files: []GeoFile{
@@ -134,6 +159,12 @@ func loadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	c.dir = filepath.Dir(path)
+	// settings.json — то, что поменяли на веб-странице; поверх config.json.
+	if sb, err := os.ReadFile(c.path(settingsFile)); err == nil {
+		if err := json.Unmarshal(sb, c); err != nil {
+			return nil, fmt.Errorf("%s: %w", settingsFile, err)
+		}
+	}
 	if c.Password == "" {
 		return nil, fmt.Errorf("%s: задайте password для веб-страницы", path)
 	}
@@ -146,11 +177,23 @@ func loadConfig(path string) (*Config, error) {
 	if c.SubIntervalHours < 1 {
 		c.SubIntervalHours = 1
 	}
+	if c.LogMaxKB < 16 {
+		c.LogMaxKB = 16
+	}
 	if c.Geo.IntervalHours < 1 {
 		c.Geo.IntervalHours = 24
 	}
 	if c.Watch.TestBytes < 1024 {
 		c.Watch.TestBytes = 65536
+	}
+	if c.Watch.TimeoutSec < 3 {
+		c.Watch.TimeoutSec = 10
+	}
+	if c.Watch.FailsToSwitch < 1 {
+		c.Watch.FailsToSwitch = 1
+	}
+	if c.Watch.MaxTry < 1 {
+		c.Watch.MaxTry = 20
 	}
 	if c.Xray.Balancer == "" {
 		c.Xray.Balancer = "xsub"
@@ -160,7 +203,10 @@ func loadConfig(path string) (*Config, error) {
 
 func (c *Config) path(name string) string { return filepath.Join(c.dir, name) }
 
-const subsFile = "subscriptions.json"
+const (
+	subsFile     = "subscriptions.json"
+	settingsFile = "settings.json"
+)
 
 // loadSubs читает subscriptions.json; при его отсутствии переносит подписку из старого config.json.
 func loadSubs(c *Config) ([]Subscription, error) {

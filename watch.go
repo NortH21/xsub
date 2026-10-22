@@ -16,30 +16,63 @@ import (
 
 type NodeState struct {
 	Node
-	TestPort  int       `json:"test_port"`
-	LatencyMs int       `json:"latency_ms"` // 0 — не проверялся, -1 — недоступен
-	CheckedAt time.Time `json:"checked_at"`
-	BadUntil  time.Time `json:"bad_until"`
-	LastErr   string    `json:"last_err"`
+	TestPort  int        `json:"test_port"`
+	LatencyMs int        `json:"latency_ms"` // 0 — не проверялся, -1 — недоступен
+	CheckedAt time.Time  `json:"checked_at"`
+	BadUntil  time.Time  `json:"bad_until"`
+	LastErr   string     `json:"last_err"`
+	Stats     *NodeStats `json:"stats"`
+}
+
+// Target — то, за чем следит сторож: основной балансировщик или балансировщик группы.
+type Target struct {
+	TargetDef
+	tags       map[string]bool
+	Active     string
+	Pinned     bool
+	Fails      int
+	LastOK     time.Time
+	Down       bool
+	lastSelect time.Time
+	Slots      []Slot // доступность цели по получасам
+}
+
+func (t *Target) has(tag string) bool { return t.tags == nil || t.tags[tag] }
+
+func (t *Target) where() string {
+	if t.ID == "" {
+		return ""
+	}
+	return " [" + t.Name + "]"
 }
 
 type Watcher struct {
 	c *Config
 
-	mu         sync.Mutex
-	nodes      []*NodeState
-	active     string
-	pinned     bool
-	fails      int
-	lastOK     time.Time
-	lastSelect time.Time
-	xrayStart  string
+	mu        sync.Mutex
+	nodes     []*NodeState
+	targets   []*Target
+	stats     map[string]*NodeStats // переживает обновление подписки
+	xrayStart string
+	bgIdx     int
+	lastBg    time.Time
+
+	notify func(key, text string) // уведомления (Telegram); может быть nil
 }
 
-func newWatcher(c *Config) *Watcher { return &Watcher{c: c} }
+func newWatcher(c *Config) *Watcher { return &Watcher{c: c, stats: map[string]*NodeStats{}} }
 
-// setNodes обновляет список узлов, сохраняя накопленное состояние совпадающих.
-func (w *Watcher) setNodes(nodes []Node) {
+// say пишет в журнал, в историю и (если key не пустой) отправляет уведомление.
+func (w *Watcher) say(key, kind, text string) {
+	lg.Printf("%s", text)
+	events.add(kind, text)
+	if w.notify != nil && key != "" {
+		w.notify(key, text)
+	}
+}
+
+// setNodes обновляет узлы и цели, сохраняя накопленное состояние.
+func (w *Watcher) setNodes(nodes []Node, defs []TargetDef) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	old := map[string]*NodeState{}
@@ -52,28 +85,79 @@ func (w *Watcher) setNodes(nodes []Node) {
 		if o, ok := old[n.Tag]; ok {
 			st.LatencyMs, st.CheckedAt, st.BadUntil, st.LastErr = o.LatencyMs, o.CheckedAt, o.BadUntil, o.LastErr
 		}
+		if w.stats[n.Tag] == nil {
+			w.stats[n.Tag] = newStats()
+		}
+		st.Stats = w.stats[n.Tag]
 		st.TestPort = w.c.Xray.TestPortBase + i
 		ns = append(ns, st)
 	}
 	w.nodes = ns
-	found := false
-	for _, n := range ns {
-		if n.Tag == w.active {
-			found = true
+
+	oldT := map[string]*Target{}
+	for _, t := range w.targets {
+		oldT[t.ID] = t
+	}
+	var ts []*Target
+	for _, d := range defs {
+		if len(ns) == 0 || (d.ID != "" && d.Empty) {
+			continue // у группы нет узлов — её трафик идёт основной целью
+		}
+		t := &Target{TargetDef: d}
+		if d.Tags != nil {
+			t.tags = map[string]bool{}
+			for _, tag := range d.Tags {
+				t.tags[tag] = true
+			}
+		}
+		if o, ok := oldT[d.ID]; ok {
+			t.Active, t.Pinned, t.Fails, t.LastOK, t.Down, t.lastSelect, t.Slots = o.Active, o.Pinned, o.Fails, o.LastOK, o.Down, o.lastSelect, o.Slots
+		}
+		if t.Active != "" && (!t.has(t.Active) || w.find(t.Active) == nil) {
+			t.Active, t.Pinned = "", false
+		}
+		ts = append(ts, t)
+	}
+	w.targets = ts
+}
+
+func (w *Watcher) find(tag string) *NodeState {
+	for _, n := range w.nodes {
+		if n.Tag == tag {
+			return n
 		}
 	}
-	if !found {
-		w.active, w.pinned = "", false
+	return nil
+}
+
+func (w *Watcher) target(id string) *Target {
+	for _, t := range w.targets {
+		if t.ID == id {
+			return t
+		}
 	}
+	return nil
 }
 
 func (w *Watcher) nodeName(tag string) string {
-	for _, n := range w.nodes {
-		if n.Tag == tag {
-			return n.Name
-		}
+	if n := w.find(tag); n != nil {
+		return n.Name
 	}
 	return tag
+}
+
+func (w *Watcher) record(tag string, ok bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if s := w.stats[tag]; s != nil {
+		s.record(ok, time.Now())
+	}
+}
+
+func (w *Watcher) allTargets() []*Target {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]*Target(nil), w.targets...)
 }
 
 func socksClient(port int, timeout time.Duration) *http.Client {
@@ -84,25 +168,40 @@ func socksClient(port int, timeout time.Duration) *http.Client {
 	return &http.Client{Transport: tr, Timeout: timeout}
 }
 
-// realTest — реальная загрузка через указанный локальный вход Xray.
+// realTest — реальная загрузка через локальный вход Xray плюс открытие адресов из check_urls.
 func (w *Watcher) realTest(port int) error {
 	cl := socksClient(port, time.Duration(w.c.Watch.TimeoutSec)*time.Second)
 	resp, err := cl.Get(w.c.Watch.TestURL)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, w.c.Watch.TestBytes))
+	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, w.c.Watch.TestBytes))
 	if n < w.c.Watch.TestBytes {
 		if err == nil {
 			err = fmt.Errorf("получено %d из %d байт", n, w.c.Watch.TestBytes)
 		}
 		return fmt.Errorf("обрыв на %d байтах: %v", n, err)
 	}
+	for _, u := range w.c.Watch.CheckURLs {
+		resp, err := cl.Get(u)
+		if err != nil {
+			return fmt.Errorf("%s не открывается: %s", hostOf(u), shortErr(err))
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 16<<10))
+		resp.Body.Close()
+	}
 	return nil
+}
+
+func hostOf(u string) string {
+	if p, err := url.Parse(u); err == nil && p.Host != "" {
+		return p.Host
+	}
+	return u
 }
 
 func (w *Watcher) latency(port int) (int, error) {
@@ -148,7 +247,7 @@ func (w *Watcher) checkAll() {
 			n.LatencyMs, n.CheckedAt = ms, time.Now()
 			if err != nil {
 				n.LastErr = shortErr(err)
-			} else {
+			} else if !strings.HasPrefix(n.LastErr, "залип") {
 				n.LastErr = ""
 			}
 			w.mu.Unlock()
@@ -165,35 +264,37 @@ func shortErr(err error) string {
 	return s
 }
 
-// selectNode подбирает рабочий узел: сортировка по задержке, затем реальная загрузка.
-// Вызывать под opMu.
-func (w *Watcher) selectNode(reason string) {
+// rank: сначала не помеченные «залип», затем по надёжности (история проверок), затем по задержке.
+func rank(cands []*NodeState, now time.Time) {
+	sort.SliceStable(cands, func(i, j int) bool {
+		a, b := cands[i], cands[j]
+		ab, bb := now.Before(a.BadUntil), now.Before(b.BadUntil)
+		if ab != bb {
+			return !ab
+		}
+		if ta, tb := a.Stats.tier(), b.Stats.tier(); ta != tb {
+			return ta < tb
+		}
+		return a.LatencyMs < b.LatencyMs
+	})
+}
+
+// selectNode подбирает рабочий узел для цели. Вызывать под opMu.
+func (w *Watcher) selectNode(t *Target, reason string) {
 	w.mu.Lock()
-	w.lastSelect = time.Now()
+	t.lastSelect = time.Now()
 	w.mu.Unlock()
 	w.checkAll()
 
 	w.mu.Lock()
-	// Сначала узлы без отметки «залип», за ними — отмеченные (лучше они, чем ничего).
-	var cands, badOnes []*NodeState
-	now := time.Now()
+	var cands []*NodeState
 	for _, n := range w.nodes {
-		if n.LatencyMs <= 0 {
-			continue
-		}
-		if now.After(n.BadUntil) {
+		if n.LatencyMs > 0 && t.has(n.Tag) {
 			cands = append(cands, n)
-		} else {
-			badOnes = append(badOnes, n)
 		}
 	}
-	byLat := func(l []*NodeState) {
-		sort.Slice(l, func(i, j int) bool { return l[i].LatencyMs < l[j].LatencyMs })
-	}
-	byLat(cands)
-	byLat(badOnes)
-	cands = append(cands, badOnes...)
-	prev := w.active
+	rank(cands, time.Now())
+	prev := t.Active
 	w.mu.Unlock()
 
 	tried := 0
@@ -202,35 +303,46 @@ func (w *Watcher) selectNode(reason string) {
 			break
 		}
 		tried++
-		if err := w.realTest(n.TestPort); err != nil {
+		err := w.realTest(n.TestPort)
+		w.record(n.Tag, err == nil)
+		if err != nil {
 			w.mu.Lock()
 			n.LastErr = "загрузка: " + shortErr(err)
 			w.mu.Unlock()
 			continue
 		}
-		if err := w.override(n.Tag); err != nil {
-			lg.Printf("не удалось переключить балансировщик: %v", err)
+		if err := w.override(t.Balancer, n.Tag); err != nil {
+			lg.Printf("не удалось переключить балансировщик %s: %v", t.Balancer, err)
 			return
 		}
 		w.mu.Lock()
-		w.active, w.pinned, w.fails, w.lastOK = n.Tag, false, 0, time.Now()
+		wasDown := t.Down
+		t.Active, t.Pinned, t.Fails, t.LastOK, t.Down = n.Tag, false, 0, time.Now(), false
 		n.BadUntil, n.LastErr = time.Time{}, ""
 		w.mu.Unlock()
-		if prev != n.Tag {
-			lg.Printf("%s: выбран «%s» (%d мс, проверено узлов: %d)", reason, n.Name, n.LatencyMs, tried)
+		switch {
+		case wasDown:
+			w.say("up"+t.ID, "up", fmt.Sprintf("%s%s: связь восстановлена через «%s»", reason, t.where(), n.Name))
+		case prev != "" && prev != n.Tag:
+			w.say("switch"+t.ID, "switch", fmt.Sprintf("%s%s: переключено на «%s» (%d мс)", reason, t.where(), n.Name, n.LatencyMs))
+		case prev != n.Tag:
+			w.say("", "info", fmt.Sprintf("%s%s: выбран «%s» (%d мс, проверено узлов: %d)", reason, t.where(), n.Name, n.LatencyMs, tried))
 		}
 		return
 	}
-	_ = w.override("")
+	_ = w.override(t.Balancer, "")
 	w.mu.Lock()
-	w.active, w.pinned = "", false
+	wasDown := t.Down
+	t.Active, t.Pinned, t.Down = "", false, true
 	w.mu.Unlock()
-	lg.Printf("%s: рабочих узлов не нашлось (проверено: %d) — трафик идёт через автовыбор Xray", reason, tried)
+	if !wasDown {
+		w.say("down"+t.ID, "down", fmt.Sprintf("%s%s: рабочих узлов не нашлось (проверено: %d) — трафик идёт через автовыбор Xray", reason, t.where(), tried))
+	}
 }
 
 // override закрепляет балансировщик за узлом (tag="" — снять закрепление).
-func (w *Watcher) override(tag string) error {
-	args := []string{"api", "bo", "-s", w.c.Xray.APIListen, "-b", w.c.Xray.Balancer}
+func (w *Watcher) override(balancer, tag string) error {
+	args := []string{"api", "bo", "-s", w.c.Xray.APIListen, "-b", balancer}
 	if tag == "" {
 		args = append(args, "-r")
 	} else {
@@ -249,32 +361,62 @@ func (w *Watcher) override(tag string) error {
 }
 
 // pin — ручной выбор узла с веб-страницы.
-func (w *Watcher) pin(tag string) error {
+func (w *Watcher) pin(targetID, tag string) error {
 	w.mu.Lock()
-	var n *NodeState
-	for _, x := range w.nodes {
-		if x.Tag == tag {
-			n = x
-		}
-	}
+	t := w.target(targetID)
+	n := w.find(tag)
+	ok := t != nil && n != nil && t.has(tag)
 	w.mu.Unlock()
-	if n == nil {
-		return fmt.Errorf("нет узла %s", tag)
+	if !ok {
+		return fmt.Errorf("нет такого узла в этой группе")
 	}
-	if err := w.override(tag); err != nil {
+	if err := w.override(t.Balancer, tag); err != nil {
 		return err
 	}
 	w.mu.Lock()
-	w.active, w.pinned, w.fails = tag, true, 0
+	t.Active, t.Pinned, t.Fails, t.Down = tag, true, 0, false
 	w.mu.Unlock()
-	lg.Printf("вручную выбран «%s»", n.Name)
+	w.say("", "info", fmt.Sprintf("вручную выбран «%s»%s", n.Name, t.where()))
 	return nil
 }
 
-// xrayStartTime — время старта процесса xray (меняется при перезапуске),
-// чтобы заново закрепить узел после перезапуска.
-func xrayStartTime(c *Config) string {
-	name := filepath.Base(c.Xray.Bin)
+// reselect — автовыбор для всех целей. Под opMu.
+func (w *Watcher) reselect(reason string) {
+	for _, t := range w.allTargets() {
+		w.selectNode(t, reason)
+	}
+}
+
+// selectMissing — выбрать узлы для целей, у которых их ещё нет. Под opMu.
+func (w *Watcher) selectMissing(reason string) {
+	for _, t := range w.allTargets() {
+		w.mu.Lock()
+		need := t.Active == "" && time.Since(t.lastSelect) > time.Minute
+		w.mu.Unlock()
+		if need {
+			w.selectNode(t, reason)
+		}
+	}
+}
+
+// repin закрепляет выбранные узлы заново (после перезапуска Xray закрепления сбрасываются).
+// Цели, чей узел закрепить не удалось или он не работает, получают новый узел.
+func (w *Watcher) repin(reason string) {
+	for _, t := range w.allTargets() {
+		w.mu.Lock()
+		active := t.Active
+		w.mu.Unlock()
+		if active != "" && w.override(t.Balancer, active) == nil && w.realTest(t.ProbePort) == nil {
+			continue
+		}
+		w.selectNode(t, reason)
+	}
+}
+
+// xrayStartTime — отпечаток запущенных процессов ядра (меняется при перезапуске).
+func xrayStartTime(c *Config) string { return procStamp(filepath.Base(c.Xray.Bin)) }
+
+func procStamp(name string) string {
 	if len(name) > 15 {
 		name = name[:15] // /proc/*/comm обрезается до 15 символов
 	}
@@ -302,8 +444,7 @@ func xrayStartTime(c *Config) string {
 }
 
 func (w *Watcher) loop(ctx context.Context) {
-	iv := time.Duration(w.c.Watch.IntervalSec) * time.Second
-	t := time.NewTicker(iv)
+	t := time.NewTicker(time.Duration(w.c.Watch.IntervalSec) * time.Second)
 	defer t.Stop()
 	for {
 		select {
@@ -311,104 +452,160 @@ func (w *Watcher) loop(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		if !w.c.Watch.Enabled {
-			continue
+		if w.c.Watch.Enabled {
+			w.tick()
 		}
-		w.tick()
 	}
 }
 
 func (w *Watcher) tick() {
 	opMu.Lock()
 	defer opMu.Unlock()
-
 	st := xrayStartTime(w.c)
 	if st == "" {
-		return // xray не запущен — ждём
+		return // ядро не запущено — этим занимается самовосстановление
 	}
 	w.mu.Lock()
-	active, pinned, nNodes := w.active, w.pinned, len(w.nodes)
 	restarted := st != w.xrayStart
-	since := time.Since(w.lastSelect)
 	w.mu.Unlock()
-	if nNodes == 0 {
-		return
-	}
-	if active == "" {
-		if since > 5*time.Minute {
-			w.selectNode("поиск рабочего узла")
-		}
+	if len(w.allTargets()) == 0 {
 		return
 	}
 	if restarted {
 		time.Sleep(3 * time.Second)
-		if err := w.override(active); err != nil {
-			lg.Printf("xray перезапущен, не удалось вернуть узел «%s»: %v", w.nodeName(active), err)
-			w.selectNode("после перезапуска Xray")
-			return
-		}
-		lg.Printf("xray перезапущен — узел «%s» закреплён снова", w.nodeName(active))
+		lg.Printf("Xray перезапущен — закрепляю выбранные узлы снова")
+		w.repin("после перезапуска Xray")
 	}
+	for _, t := range w.allTargets() {
+		w.checkTarget(t)
+	}
+	w.background()
+}
 
-	err := w.realTest(w.c.Xray.ProbePort)
-	if err != nil && w.internetOK() {
-		// Закрепление могло пропасть (Xray перезапущен) — восстанавливаем и проверяем ещё раз.
-		if oerr := w.override(active); oerr == nil {
+func (w *Watcher) checkTarget(t *Target) {
+	w.mu.Lock()
+	active, pinned, since := t.Active, t.Pinned, time.Since(t.lastSelect)
+	w.mu.Unlock()
+	if active == "" {
+		if since > 5*time.Minute {
+			w.selectNode(t, "поиск рабочего узла")
+		}
+		return
+	}
+	err := w.realTest(t.ProbePort)
+	if err != nil {
+		if !w.internetOK() {
+			return // нет интернета вообще — VPN не виноват
+		}
+		// Закрепление могло пропасть (Xray перезапускался) — восстанавливаем и проверяем ещё раз.
+		if w.override(t.Balancer, active) == nil {
 			time.Sleep(2 * time.Second)
-			if w.realTest(w.c.Xray.ProbePort) == nil {
-				lg.Printf("закрепление узла «%s» восстановлено (Xray, видимо, перезапускался)", w.nodeName(active))
+			if w.realTest(t.ProbePort) == nil {
 				err = nil
 			}
 		}
-	} else if err != nil {
-		return // нет интернета вообще — VPN не виноват
 	}
+	w.record(active, err == nil)
+	w.mu.Lock()
+	addSlot(&t.Slots, err == nil, time.Now())
 	if err == nil {
-		w.mu.Lock()
-		w.fails, w.lastOK = 0, time.Now()
+		t.Fails, t.LastOK = 0, time.Now()
 		w.mu.Unlock()
 		return
 	}
-	w.mu.Lock()
-	w.fails++
-	fails := w.fails
+	t.Fails++
+	fails := t.Fails
 	name := w.nodeName(active)
 	w.mu.Unlock()
-	lg.Printf("проверка не прошла (%d/%d), узел «%s»: %s", fails, w.c.Watch.FailsToSwitch, name, shortErr(err))
+	lg.Printf("проверка не прошла (%d/%d), узел «%s»%s: %s", fails, w.c.Watch.FailsToSwitch, name, t.where(), shortErr(err))
 	if fails < w.c.Watch.FailsToSwitch {
 		return
 	}
 	w.mu.Lock()
-	for _, n := range w.nodes {
-		if n.Tag == active {
-			n.BadUntil = time.Now().Add(time.Duration(w.c.Watch.BadCooldownMin) * time.Minute)
-			n.LastErr = "залип: " + shortErr(err)
-		}
+	if n := w.find(active); n != nil {
+		n.BadUntil = time.Now().Add(time.Duration(w.c.Watch.BadCooldownMin) * time.Minute)
+		n.LastErr = "залип: " + shortErr(err)
 	}
-	w.fails = 0
+	t.Fails = 0
 	w.mu.Unlock()
 	if pinned {
 		lg.Printf("вручную выбранный узел «%s» залип — снимаю ручной выбор", name)
 	}
-	w.selectNode(fmt.Sprintf("узел «%s» залип", name))
+	w.selectNode(t, fmt.Sprintf("узел «%s» залип", name))
+}
+
+// background по очереди проверяет загрузкой узлы, которые сейчас не активны,
+// чтобы у каждого копилась история и при сбое выбирался проверенный узел.
+func (w *Watcher) background() {
+	every := time.Duration(w.c.Watch.BackgroundProbeMin) * time.Minute
+	if every <= 0 || time.Since(w.lastBg) < every {
+		return
+	}
+	w.mu.Lock()
+	w.lastBg = time.Now()
+	active := map[string]bool{}
+	for _, t := range w.targets {
+		active[t.Active] = true
+	}
+	var pick *NodeState
+	for i := 0; i < len(w.nodes); i++ {
+		n := w.nodes[(w.bgIdx+i)%len(w.nodes)]
+		if !active[n.Tag] {
+			pick = n
+			w.bgIdx = (w.bgIdx + i + 1) % len(w.nodes)
+			break
+		}
+	}
+	w.mu.Unlock()
+	if pick == nil {
+		return
+	}
+	err := w.realTest(pick.TestPort)
+	w.record(pick.Tag, err == nil)
+	w.mu.Lock()
+	if err != nil {
+		pick.LastErr = "фоновая проверка: " + shortErr(err)
+	} else if strings.HasPrefix(pick.LastErr, "фоновая проверка") || strings.HasPrefix(pick.LastErr, "загрузка") {
+		pick.LastErr = ""
+	}
+	w.mu.Unlock()
+}
+
+type TargetStatus struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Active     string    `json:"active"`
+	ActiveName string    `json:"active_name"`
+	Pinned     bool      `json:"pinned"`
+	Down       bool      `json:"down"`
+	LastOK     time.Time `json:"last_ok"`
+	Tags       []string  `json:"tags"`
+	Slots      []Slot    `json:"slots"`
 }
 
 type Status struct {
-	Active     string       `json:"active"`
-	ActiveName string       `json:"active_name"`
-	Pinned     bool         `json:"pinned"`
-	Fails      int          `json:"fails"`
-	LastOK     time.Time    `json:"last_ok"`
-	XrayUp     bool         `json:"xray_up"`
-	Nodes      []*NodeState `json:"nodes"`
+	Targets []TargetStatus `json:"targets"`
+	XrayUp  bool           `json:"xray_up"`
+	Nodes   []*NodeState   `json:"nodes"`
 }
 
 func (w *Watcher) status() Status {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	s := Status{Active: w.active, ActiveName: w.nodeName(w.active), Pinned: w.pinned, Fails: w.fails, LastOK: w.lastOK, XrayUp: xrayStartTime(w.c) != ""}
+	s := Status{XrayUp: xrayStartTime(w.c) != ""}
+	for _, t := range w.targets {
+		s.Targets = append(s.Targets, TargetStatus{
+			ID: t.ID, Name: t.Name, Active: t.Active, ActiveName: w.nodeName(t.Active), Pinned: t.Pinned,
+			Down: t.Down, LastOK: t.LastOK, Tags: t.Tags, Slots: append([]Slot(nil), t.Slots...),
+		})
+	}
 	for _, n := range w.nodes {
 		cp := *n
+		if n.Stats != nil {
+			sc := *n.Stats
+			sc.Slots = append([]Slot(nil), n.Stats.Slots...)
+			cp.Stats = &sc
+		}
 		s.Nodes = append(s.Nodes, &cp)
 	}
 	return s

@@ -113,7 +113,7 @@ func restoreOriginals(c *Config) error {
 // подменяет файлы и перезапускает Xray. Возвращает changed=false, если менять нечего.
 // Вызывать под opMu.
 func applyConfig(c *Config, nodes []Node, reason string) (changed bool, err error) {
-	l, lerrs, err := readLists(c)
+	rs, lerrs, err := readRouting(c)
 	if err != nil {
 		return false, err
 	}
@@ -124,7 +124,7 @@ func applyConfig(c *Config, nodes []Node, reason string) (changed bool, err erro
 	if err != nil {
 		return false, err
 	}
-	routing, xsub, err := generate(c, env, nodes, l)
+	routing, xsub, err := generate(c, env, nodes, rs)
 	if err != nil {
 		return false, err
 	}

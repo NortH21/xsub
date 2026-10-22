@@ -36,7 +36,7 @@ for t in "${TARGETS[@]}"; do
   env CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
     $( [ "$gomips" != "-" ] && echo GOMIPS="$gomips" ) \
     $( [ "$goarm" != "-" ] && echo GOARM="$goarm" ) \
-    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$bin" .
+    go build -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.defaultRepo=$REPO" -o "$bin" .
 
   work="$(mktemp -d)"
   mkdir -p "$work/data/opt/sbin" "$work/data/opt/etc/init.d" "$work/control"
