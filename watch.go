@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -170,7 +171,7 @@ func socksClient(port int, timeout time.Duration) *http.Client {
 // realTest — реальная загрузка через локальный вход Xray плюс открытие адресов из check_urls.
 func (w *Watcher) realTest(port int) error {
 	cl := socksClient(port, time.Duration(w.c.Watch.TimeoutSec)*time.Second)
-	resp, err := cl.Get(w.c.Watch.TestURL)
+	resp, err := cl.Get(testURL(w.c))
 	if err != nil {
 		return err
 	}
@@ -194,6 +195,11 @@ func (w *Watcher) realTest(port int) error {
 		resp.Body.Close()
 	}
 	return nil
+}
+
+// testURL подставляет размер проверки в адрес ({bytes}).
+func testURL(c *Config) string {
+	return strings.ReplaceAll(c.Watch.TestURL, "{bytes}", strconv.FormatInt(c.Watch.TestBytes, 10))
 }
 
 func hostOf(u string) string {

@@ -65,8 +65,8 @@ type XrayConfig struct {
 type WatchConfig struct {
 	Enabled        bool     `json:"enabled"`
 	IntervalSec    int      `json:"interval_sec"`
-	TestURL        string   `json:"test_url"`
-	TestBytes      int64    `json:"test_bytes"`
+	TestURL        string   `json:"test_url"`   // {bytes} заменяется на test_bytes
+	TestBytes      int64    `json:"test_bytes"` // сколько должно скачаться, чтобы узел считался рабочим
 	TimeoutSec     int      `json:"timeout_sec"`
 	FailsToSwitch  int      `json:"fails_to_switch"`
 	MaxTry         int      `json:"max_try"`
@@ -128,8 +128,8 @@ func defaultConfig() *Config {
 		Watch: WatchConfig{
 			Enabled:            true,
 			IntervalSec:        60,
-			TestURL:            "https://speed.cloudflare.com/__down?bytes=65536",
-			TestBytes:          65536,
+			TestURL:            "https://speed.cloudflare.com/__down?bytes={bytes}",
+			TestBytes:          32 << 10, // известная блокировка срабатывает на 16–20 КБ
 			TimeoutSec:         10,
 			FailsToSwitch:      2,
 			MaxTry:             20,
@@ -185,7 +185,7 @@ func loadConfig(path string) (*Config, error) {
 		c.Geo.IntervalHours = 24
 	}
 	if c.Watch.TestBytes < 1024 {
-		c.Watch.TestBytes = 65536
+		c.Watch.TestBytes = 32 << 10
 	}
 	if c.Watch.TimeoutSec < 3 {
 		c.Watch.TimeoutSec = 10

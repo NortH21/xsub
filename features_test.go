@@ -201,6 +201,12 @@ func TestSettingsValidation(t *testing.T) {
 	var s UISettings
 	s.SubIntervalHours, s.MaxNodes = 6, 60
 	s.Watch.IntervalSec, s.Watch.FailsToSwitch = 60, 2
+	s.Watch.TestBytes = 4 << 10
+	s.Watch.CheckURLs = []string{"https://ok.example"}
+	if err := a.validateSettings(&s); err == nil {
+		t.Error("проверочная загрузка 4 КБ должна отклоняться")
+	}
+	s.Watch.TestBytes = 32 << 10
 	s.Watch.CheckURLs = []string{"ftp://x"}
 	if err := a.validateSettings(&s); err == nil {
 		t.Error("ftp-адрес проверки должен отклоняться")
@@ -272,5 +278,17 @@ func TestBackgroundSchedule(t *testing.T) {
 	// квота 2: самые давние первыми, «fresh» (5 мин) тоже просрочен при цикле 2 мин
 	if strings.Join(tags, ",") != "older,old" {
 		t.Fatalf("%v", tags)
+	}
+}
+
+func TestTestURL(t *testing.T) {
+	c := defaultConfig()
+	if c.Watch.TestBytes != 32768 || testURL(c) != "https://speed.cloudflare.com/__down?bytes=32768" {
+		t.Fatalf("по умолчанию: %d %s", c.Watch.TestBytes, testURL(c))
+	}
+	c.Watch.TestBytes = 24 << 10
+	c.Watch.TestURL = "https://example.com/blob"
+	if testURL(c) != "https://example.com/blob" {
+		t.Fatalf("без {bytes} адрес не меняется: %s", testURL(c))
 	}
 }
