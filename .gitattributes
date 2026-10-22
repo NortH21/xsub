@@ -1,0 +1,4 @@
+# Скрипты запускаются на роутере и в Linux — только LF, даже при сборке на Windows.
+* text=auto eol=lf
+*.ipk binary
+*.png binary

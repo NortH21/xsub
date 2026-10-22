@@ -15,13 +15,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Тесты
         run: go vet ./... && go test ./...
@@ -31,7 +32,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then export VERSION="${GITHUB_REF_NAME#v}"; fi
-          scripts/build.sh
+          bash scripts/build.sh
 
       - uses: actions/upload-artifact@v4
         with:
