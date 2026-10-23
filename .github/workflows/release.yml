@@ -66,3 +66,38 @@ jobs:
     steps:
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  # Сообщение в Telegram-канал о новой версии — после публикации репозитория opkg,
+  # чтобы «opkg upgrade» и кнопка «Обновить» уже видели её.
+  # Нужны секреты репозитория TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID (например, @xsuby);
+  # бот должен быть администратором канала с правом публиковать сообщения. Без секретов шаг пропускается.
+  notify:
+    if: github.ref_type == 'tag'
+    needs: [build, pages]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Сообщение в Telegram
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
+            echo "секреты TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID не заданы — пропускаю"
+            exit 0
+          fi
+          TAG="$GITHUB_REF_NAME"
+          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          RANGE="$TAG"; [ -n "$PREV" ] && RANGE="$PREV..$TAG"
+          CHANGES=$(git log --no-merges --format='• %s' "$RANGE" | head -n 30)
+          TEXT=$(printf 'Вышла xsub %s\n\n%s\n\nОбновление: кнопка «Обновить» в настройках xsub или opkg update && opkg upgrade xsub\nРелиз: https://github.com/%s/releases/tag/%s' \
+            "$TAG" "$CHANGES" "$REPO" "$TAG")
+          jq -n --arg chat "$CHAT" --arg text "$TEXT" \
+            '{chat_id: $chat, text: $text, disable_web_page_preview: true}' |
+          curl -fsS -X POST -H 'Content-Type: application/json' -d @- \
+            "https://api.telegram.org/bot$TOKEN/sendMessage" > /dev/null
+          echo "отправлено в $CHAT"
