@@ -139,7 +139,7 @@ func TestEnvDetection(t *testing.T) {
 		t.Errorf("sockopt: %s", so)
 	}
 	nodes, _ := parseSubscription(decodeSubscription([]byte(sampleSub())), parseOpts{maxNodes: 2})
-	r, x, err := generate(c, env, nodes, RouteSet{VPN: Rules{Domains: []string{"domain:example.com"}}})
+	r, x, err := generate(c, env, nodes, nil, RouteSet{VPN: Rules{Domains: []string{"domain:example.com"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,14 +150,14 @@ func TestEnvDetection(t *testing.T) {
 		t.Error("правило для несуществующих force-proxy входов")
 	}
 	// без узлов и без запасного — VPN-правил нет, всё напрямую
-	r, _, _ = generate(c, env, nil, RouteSet{VPN: Rules{Domains: []string{"domain:example.com"}}})
+	r, _, _ = generate(c, env, nil, nil, RouteSet{VPN: Rules{Domains: []string{"domain:example.com"}}})
 	if strings.Contains(string(r), "example.com") {
 		t.Errorf("без узлов VPN-правила не нужны:\n%s", r)
 	}
 	// конфликт с чужой секцией api
 	writeConf(t, c.Xray.ConfDir, map[string]string{"02_api.json": `{"api":{"tag":"api"}}`})
 	env, _ = scanEnv(c)
-	if _, _, err := generate(c, env, nodes, RouteSet{}); err == nil || !strings.Contains(err.Error(), "02_api.json") {
+	if _, _, err := generate(c, env, nodes, nil, RouteSet{}); err == nil || !strings.Contains(err.Error(), "02_api.json") {
 		t.Errorf("ожидалась ошибка про api: %v", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestWithRealXray(t *testing.T) {
 	if managed(c) {
 		t.Fatal("до первого применения xsub не должен считаться управляющим")
 	}
-	changed, err := applyConfig(c, nodes, "тест")
+	changed, err := applyConfig(c, nodes, nil, "тест")
 	if err != nil || !changed {
 		t.Fatalf("applyConfig: changed=%v err=%v", changed, err)
 	}
@@ -233,14 +233,14 @@ func TestWithRealXray(t *testing.T) {
 			os.WriteFile(filepath.Join(k, filepath.Base(f)), b, 0o644)
 		}
 	}
-	if changed, err := applyConfig(c, nodes, "повтор"); err != nil || changed {
+	if changed, err := applyConfig(c, nodes, nil, "повтор"); err != nil || changed {
 		t.Fatalf("повторное применение: changed=%v err=%v", changed, err)
 	}
-	if _, err := applyConfig(c, nil, "без узлов"); err != nil {
+	if _, err := applyConfig(c, nil, nil, "без узлов"); err != nil {
 		t.Fatalf("без узлов: %v", err)
 	}
 	os.WriteFile(c.path("vpn.txt"), []byte("плохо но!!\n"), 0o644)
-	if _, err := applyConfig(c, nodes, "битый список"); err == nil {
+	if _, err := applyConfig(c, nodes, nil, "битый список"); err == nil {
 		t.Fatal("битый список должен давать ошибку")
 	}
 	if err := restoreOriginals(c); err != nil {

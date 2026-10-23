@@ -20,7 +20,9 @@ type UISettings struct {
 	MaxNodes         int    `json:"max_nodes"`
 	LogFile          string `json:"log_file"`
 	UIAllowWAN       bool   `json:"ui_allow_wan"`
-	Xray             struct {
+	// Xray.FallbackTag — старый запасной outbound; на странице больше не меняется
+	// (резервы теперь в fallbacks.json), но сохраняется, чтобы не пропал.
+	Xray struct {
 		FallbackTag string `json:"fallback_tag"`
 	} `json:"xray"`
 	Watch struct {
@@ -50,14 +52,7 @@ func (a *App) uiSettings() map[string]any {
 	if s.Telegram.Token != "" {
 		s.Telegram.Token = secretMask
 	}
-	env, _ := scanEnv(c)
-	var outs []string
-	for tag, proto := range env.OutTags {
-		if proto != "freedom" && proto != "blackhole" && proto != "dns" {
-			outs = append(outs, tag)
-		}
-	}
-	return map[string]any{"settings": s, "outbounds": outs}
+	return map[string]any{"settings": s}
 }
 
 func (a *App) saveSettings(s UISettings) error {
@@ -79,6 +74,7 @@ func (a *App) saveSettings(s UISettings) error {
 // validateSettings проверяет значения и подставляет то, что не меняли (пароль, скрытый токен).
 func (a *App) validateSettings(s *UISettings) error {
 	c := a.c
+	s.Xray.FallbackTag = c.Xray.FallbackTag
 	if s.Password == "" {
 		s.Password = c.Password
 	} else if len(s.Password) < 6 {
@@ -145,7 +141,7 @@ func restartSelf() {
 
 // ---------- резервная копия ----------
 
-var backupNameRe = regexp.MustCompile(`^(config\.json|settings\.json|subscriptions\.json|groups\.json|vpn\.txt|direct\.txt|group-g[0-9]{1,3}\.txt)$`)
+var backupNameRe = regexp.MustCompile(`^(config\.json|settings\.json|subscriptions\.json|groups\.json|vpn\.txt|direct\.txt|fallbacks\.json|group-g[0-9]{1,3}\.txt)$`)
 
 type Backup struct {
 	App     string            `json:"app"`
@@ -216,6 +212,9 @@ func (a *App) restoreFilesOnly(bk Backup) error {
 	if _, err := loadGroups(tc); err != nil {
 		return err
 	}
+	if _, err := loadFallbacks(tc); err != nil {
+		return err
+	}
 	// старые списки групп убираем, чтобы не осталось лишних
 	if entries, err := os.ReadDir(a.c.dir); err == nil {
 		for _, e := range entries {
@@ -226,7 +225,7 @@ func (a *App) restoreFilesOnly(bk Backup) error {
 			}
 		}
 	}
-	for _, name := range []string{"settings.json", "groups.json"} {
+	for _, name := range []string{"settings.json", "groups.json", fallbacksFile} {
 		if _, ok := bk.Files[name]; !ok {
 			_ = os.Remove(a.c.path(name))
 		}

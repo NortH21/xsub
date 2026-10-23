@@ -43,7 +43,7 @@ func parseLink(link string, sockopt any) (Node, error) {
 }
 
 func newNode(link, proto, name, host string, port int, warn string, ob map[string]any) Node {
-	tag := nodeTag(link)
+	tag := identityTag("node-", ob)
 	ob["tag"] = tag
 	return Node{Tag: tag, Name: name, Proto: proto, Address: host, Port: port, Warn: warn, Outbound: ob}
 }

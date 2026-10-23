@@ -39,7 +39,7 @@ func TestGroupsGenerate(t *testing.T) {
 		Groups: []GroupRules{{Group: gs[0], Rules: Rules{Domains: []string{"domain:youtube.com"}}}, {Group: gs[1], Rules: Rules{Domains: []string{"domain:empty.example"}}}},
 	}
 	env := Env{OutTags: map[string]string{"direct": "freedom"}, InTags: map[string]bool{}, sockByTag: map[string]any{}}
-	r, x, err := generate(c, env, nodes, rs)
+	r, x, err := generate(c, env, nodes, nil, rs)
 	if err != nil {
 		t.Fatal(err)
 	}

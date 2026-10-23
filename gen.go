@@ -18,13 +18,20 @@ const (
 	ownDirect   = "xsub-direct"
 )
 
-func testTag(n Node) string { return testPrefix + strings.TrimPrefix(n.Tag, "node-") }
+func testTag(n Node) string {
+	if isFallbackTag(n.Tag) {
+		return testPrefix + n.Tag
+	}
+	return testPrefix + strings.TrimPrefix(n.Tag, "node-")
+}
 
 // Env — то, что уже есть в конфигах Xray помимо файлов xsub.
 type Env struct {
-	OutTags      map[string]string // tag -> protocol
+	OutTags      map[string]string         // tag -> protocol
+	RawOut       map[string]map[string]any // tag -> outbound целиком (для переноса в резервы xsub)
 	FirstFreedom string
 	InTags       map[string]bool
+	Sniff        map[string]bool // входы с включённым sniffing (нужен для правил по доменам)
 	sockByTag    map[string]any
 	anySockopt   any
 	API          []string // файлы с секцией api
@@ -34,7 +41,7 @@ type Env struct {
 
 // scanEnv читает все *.json из папки конфигов (кроме файлов xsub).
 func scanEnv(c *Config) (Env, error) {
-	e := Env{OutTags: map[string]string{}, InTags: map[string]bool{}, sockByTag: map[string]any{}}
+	e := Env{OutTags: map[string]string{}, RawOut: map[string]map[string]any{}, InTags: map[string]bool{}, sockByTag: map[string]any{}}
 	files, _ := filepath.Glob(filepath.Join(c.Xray.ConfDir, "*.json"))
 	sort.Strings(files)
 	for _, f := range files {
@@ -71,6 +78,13 @@ func scanEnv(c *Config) (Env, error) {
 		}
 		if raw, ok := doc["outbounds"]; ok {
 			_ = json.Unmarshal(raw, &outs)
+			var full []map[string]any
+			_ = json.Unmarshal(raw, &full)
+			for _, o := range full {
+				if t := anyStr(o["tag"]); t != "" {
+					e.RawOut[t] = o
+				}
+			}
 		}
 		for _, o := range outs {
 			if o.Tag == "" {
@@ -88,7 +102,10 @@ func scanEnv(c *Config) (Env, error) {
 			}
 		}
 		var ins []struct {
-			Tag string `json:"tag"`
+			Tag      string `json:"tag"`
+			Sniffing struct {
+				Enabled bool `json:"enabled"`
+			} `json:"sniffing"`
 		}
 		if raw, ok := doc["inbounds"]; ok {
 			_ = json.Unmarshal(raw, &ins)
@@ -96,6 +113,12 @@ func scanEnv(c *Config) (Env, error) {
 		for _, in := range ins {
 			if in.Tag != "" {
 				e.InTags[in.Tag] = true
+				if in.Sniffing.Enabled {
+					if e.Sniff == nil {
+						e.Sniff = map[string]bool{}
+					}
+					e.Sniff[in.Tag] = true
+				}
 			}
 		}
 	}
@@ -153,13 +176,17 @@ func (e Env) check(c *Config) error {
 }
 
 // generate собирает содержимое 05_routing.json и 07_xsub.json.
-func generate(c *Config, env Env, nodes []Node, rs RouteSet) (routing, xsub []byte, err error) {
+// fbs — резервные узлы xsub (в порядке приоритета); первый из них — fallbackTag балансировщиков.
+func generate(c *Config, env Env, nodes, fbs []Node, rs RouteSet) (routing, xsub []byte, err error) {
 	if err := env.check(c); err != nil {
 		return nil, nil, err
 	}
 	x := c.Xray
 	directTag, ownDir := env.directTag(c)
-	fallback := env.fallbackTag(c)
+	fallback := env.fallbackTag(c) // старый способ: outbound из конфигов XKeen (xray.fallback_tag)
+	if len(fbs) > 0 {
+		fallback = fbs[0].Tag
+	}
 	var groups []Group
 	for _, g := range rs.Groups {
 		groups = append(groups, g.Group)
@@ -206,7 +233,7 @@ func generate(c *Config, env Env, nodes []Node, rs RouteSet) (routing, xsub []by
 			inbounds = append(inbounds, socksIn(tag, d.ProbePort))
 		}
 	}
-	for _, n := range nodes {
+	for _, n := range append(append([]Node(nil), nodes...), fbs...) {
 		rules = append(rules, rule(map[string]any{"inboundTag": []string{testTag(n)}}, map[string]any{"outboundTag": n.Tag}))
 	}
 	var force []string
@@ -261,7 +288,7 @@ func generate(c *Config, env Env, nodes []Node, rs RouteSet) (routing, xsub []by
 	}
 
 	var outbounds []any
-	for i, n := range nodes {
+	for i, n := range append(append([]Node(nil), nodes...), fbs...) {
 		inbounds = append(inbounds, socksIn(testTag(n), x.TestPortBase+i))
 		outbounds = append(outbounds, n.Outbound)
 	}

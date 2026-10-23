@@ -112,7 +112,7 @@ func restoreOriginals(c *Config) error {
 // applyConfig генерирует конфиг, проверяет его копию через xray -test и только потом
 // подменяет файлы и перезапускает Xray. Возвращает changed=false, если менять нечего.
 // Вызывать под opMu.
-func applyConfig(c *Config, nodes []Node, reason string) (changed bool, err error) {
+func applyConfig(c *Config, nodes, fbs []Node, reason string) (changed bool, err error) {
 	rs, lerrs, err := readRouting(c)
 	if err != nil {
 		return false, err
@@ -124,7 +124,7 @@ func applyConfig(c *Config, nodes []Node, reason string) (changed bool, err erro
 	if err != nil {
 		return false, err
 	}
-	routing, xsub, err := generate(c, env, nodes, rs)
+	routing, xsub, err := generate(c, env, nodes, fbs, rs)
 	if err != nil {
 		return false, err
 	}
@@ -178,7 +178,7 @@ func applyConfig(c *Config, nodes []Node, reason string) (changed bool, err erro
 	if err := writeAtomic(rPath, routing); err != nil {
 		return false, err
 	}
-	lg.Printf("конфиг Xray обновлён (%s), узлов: %d — перезапускаю Xray", reason, len(nodes))
+	lg.Printf("конфиг Xray обновлён (%s), узлов: %d, резервов: %d — перезапускаю Xray", reason, len(nodes), len(fbs))
 	if err := restartXray(c); err != nil {
 		lg.Printf("ошибка перезапуска: %v — возвращаю прежний конфиг", err)
 		restoreFiles(c, oldR, oldX)

@@ -22,6 +22,7 @@ select{background:var(--bg)}
 button:hover{border-color:var(--acc)}
 button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.5;cursor:wait}
+#updBtn:disabled{cursor:not-allowed}
 input,textarea{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;min-width:0}
 textarea{width:100%;min-height:300px;padding:10px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}
 label{display:flex;flex-direction:column;gap:4px;flex:1 1 220px}
@@ -97,6 +98,10 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
 
 <!-- Обзор -->
 <div data-tab="overview">
+  <section id="diagBox" class="hide">
+    <h2 data-i18n="diagFix"></h2>
+    <div id="diagWarn"></div>
+  </section>
   <section>
     <div id="targets"></div>
     <div class="row" style="margin-top:10px">
@@ -127,6 +132,17 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <span id="smsg" class="muted"></span>
     </div>
     <p class="muted" data-i18n="subsHint"></p>
+  </section>
+  <section>
+    <h2 data-i18n="fbTitle"></h2>
+    <p class="muted" data-i18n="fbHint"></p>
+    <div id="fbs"></div>
+    <div id="fbImports"></div>
+    <div class="row" style="margin-top:8px">
+      <button data-i18n="addFb" onclick="addFb()"></button>
+      <button class="primary" id="fbsave" data-i18n="saveFb" onclick="saveFbs()"></button>
+      <span id="fbmsg" class="muted"></span>
+    </div>
   </section>
 </div>
 
@@ -188,8 +204,6 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <div class="fv"><input id="s_user_agent" name="xsub_user_agent" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other"></div>
       <label class="fl" for="s_max_nodes" data-i18n="sMax"></label>
       <div class="fv"><input id="s_max_nodes" class="num" type="number" min="1" max="500"></div>
-      <label class="fl" for="s_fallback_tag" data-i18n="sFallback"></label>
-      <div class="fv"><select id="s_fallback_tag"></select><small class="hint" data-i18n="hFallback"></small></div>
       <h3 class="fh" data-i18n="setWatch"></h3>
       <label class="fl" for="s_w_enabled" data-i18n="sWEnabled"></label>
       <div class="fv"><input type="checkbox" id="s_w_enabled"></div>
@@ -242,6 +256,12 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
     </div>
   </section>
   <section>
+    <h2 data-i18n="diagTitle"></h2>
+    <p class="muted" data-i18n="diagHint"></p>
+    <div id="diagAll"></div>
+    <div class="row" style="margin-top:8px"><button data-i18n="diagRecheck" onclick="loadDiag()"></button></div>
+  </section>
+  <section>
     <h2 data-i18n="setUpdate"></h2>
     <div class="row">
       <span id="uver" class="grow"></span>
@@ -274,6 +294,10 @@ ru: {
   addSub:'+ Добавить подписку', saveSubs:'Сохранить подписки', saved:'Сохранено.', saving:'Сохраняю…',
   subsHint:'Подходят ссылки vless/vmess/trojan/ss/hysteria2/wireguard/socks/http (списком или в base64), Clash/mihomo YAML, sing-box JSON и JSON Xray. Фильтр — регулярное выражение по имени узла, например (?i)Россия|Осталось. Информационные строки панелей пропускаются сами.',
   phName:'Название', phUrl:'https://… ссылка на подписку', phEx:'Исключить узлы (регулярное выражение)', phIn:'Только узлы (необязательно)', phUA:'User-Agent (необяз.)',
+  fbTitle:'Резервные узлы', fbHint:'Включаются, только когда не работает ни один узел подписок; раз в 10 минут xsub пробует вернуться на подписку. Порядок — приоритет. Подходят те же ссылки, что и в подписках (vless://, socks://, http:// и др.).',
+  addFb:'+ Добавить резерв', saveFb:'Сохранить резервы', phFbLink:'ссылка: vless://…, socks://user:pass@host:port, …', fbOutbound:'outbound из конфигов Xray', noFbs:'Резервов нет.',
+  fbImportTitle:'Перенести из конфигов Xray', fbImportHint:'Outbound скопируется в xsub; исходный файл XKeen не меняется — после переноса его можно удалить оттуда.', fbImported:'уже перенесён', fbLegacy:'сейчас запасной', fbImportBtn:'Перенести',
+  fallback:'резерв', up:'Выше', downBtn:'Ниже', fbOnline:'работает', fbOffline:'не отвечает',
   del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
   lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'активен', badUntil:'исключён до', select:'Выбрать', for:'для',
   nodesHint:'Надёжность — доля удачных проверок загрузкой: активный узел проверяется при каждой проверке сторожа, каждый запасной — в фоне раз в N минут (задаётся в настройках). При сбое сначала выбираются надёжные узлы, потом быстрые.',
@@ -282,7 +306,7 @@ ru: {
   groups:'Группы', groupsHint:'Группа отправляет свой список через свою часть узлов, например «YouTube через Нидерланды». Фильтр — регулярное выражение по имени узла. Если подходящих узлов нет, трафик группы идёт основной целью. Список группы редактируется во вкладке выше.',
   addGroup:'+ Добавить группу', saveGroups:'Сохранить группы', phGName:'Название группы', phGFilter:'Фильтр узлов, например (?i)нидерланд|NL', matched:'подходящих узлов', noGroups:'Групп нет.',
   routeTitle:'Куда пойдёт этот сайт?', routePh:'домен, ссылка или IP-адрес', routeBtn:'Проверить', rList:'Список', rRule:'Правило', rVia:'Сейчас через',
-  setMain:'Подписки и узлы', sInterval:'Обновлять подписки', sUA:'User-Agent по умолчанию', sMax:'Узлов из подписки', sFallback:'Запасной outbound', hFallback:'если не работает ни один узел подписок', none:'— нет —',
+  setMain:'Подписки и узлы', sInterval:'Обновлять подписки', sUA:'User-Agent по умолчанию', sMax:'Узлов из подписки', none:'— нет —',
   setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки', sWFails:'Неудач до переключения', sWBg:'Проверка запасных узлов', hBg:'каждый узел раз в N минут; 0 — выключено', sWSize:'Размер проверки', hSize:'блокировка срабатывает на 16–20 КБ — берите больше', sWRestart:'Перезапускать XKeen', hRestart:'если Xray упал; не трогает, если запущен mihomo', sWUrls:'Сайты для проверки', hUrls:'дополнительно должны открываться через узел; по одному адресу в строке',
   sTgToken:'Токен бота', sTgChat:'chat_id', sTgDays:'Конец подписки', hTgDays:'предупредить за столько дней', sTgPct:'Расход трафика', hTgPct:'предупредить при таком проценте', sTgSwitch:'О переключениях узла', sTgUpdate:'О новых версиях xsub', sTgTest:'Отправить проверочное сообщение',
   sTgHint:'Создайте бота у @BotFather и напишите ему что-нибудь; chat_id можно узнать у @userinfobot. Если Telegram недоступен напрямую, сообщения уходят через VPN.',
@@ -290,7 +314,8 @@ ru: {
   uHours:'ч', uSec:'сек', uMin:'мин', uKB:'КБ', uDays:'дн.', uPct:'%',
   saveSettings:'Сохранить настройки', restarting:'Сохранено, xsub перезапускается…',
   setBackup:'Резервная копия', backupHint:'Все настройки, подписки, списки и группы одним файлом. В файле есть ссылки подписок и пароль — храните его как секрет.', backupBtn:'Скачать копию', restoreBtn:'Восстановить из файла', restoring:'Восстанавливаю…',
-  setUpdate:'Обновление', updCheck:'Проверить', updBtn:'Обновить', curVer:'Установлена версия', newVer:'Доступна версия', upToDate:'Это последняя версия.', updStarted:'Обновление запущено, страница перезагрузится сама…', updConfirm:'Обновить xsub сейчас?',
+  diagFix:'Нужно поправить', diagTitle:'Окружение', diagHint:'После установки XKeen (ядро Xray) и xsub вручную в конфигах Xray ничего править не нужно. Здесь видно, всё ли на месте.', diagRecheck:'Проверить снова', diagCmd:'Как исправить',
+  setUpdate:'Обновление', updCheck:'Проверить', updBtn:'Обновить', curVer:'Установлена версия', newVer:'Доступна версия', upToDate:'Это последняя версия.', updStarted:'Обновление запущено, страница перезагрузится сама…', updConfirm:'Обновить xsub сейчас?', updUnknown:'Нажмите «Проверить», чтобы узнать, есть ли новая версия.',
   bannerNew:'Доступна новая версия xsub', bannerGo:'Обновить в настройках'
 },
 en: {
@@ -304,6 +329,10 @@ en: {
   addSub:'+ Add subscription', saveSubs:'Save subscriptions', saved:'Saved.', saving:'Saving…',
   subsHint:'Supported: vless/vmess/trojan/ss/hysteria2/wireguard/socks/http links (plain or base64), Clash/mihomo YAML, sing-box JSON and Xray JSON. The filter is a regular expression on node names, e.g. (?i)Russia|Remaining. Info entries from panels are skipped automatically.',
   phName:'Name', phUrl:'https://… subscription link', phEx:'Exclude nodes (regular expression)', phIn:'Only nodes (optional)', phUA:'User-Agent (optional)',
+  fbTitle:'Fallback nodes', fbHint:'Used only when no subscription node works; every 10 minutes xsub tries to switch back to the subscription. Order is priority. Same links as in subscriptions (vless://, socks://, http:// etc.).',
+  addFb:'+ Add fallback', saveFb:'Save fallbacks', phFbLink:'link: vless://…, socks://user:pass@host:port, …', fbOutbound:'outbound from Xray configs', noFbs:'No fallbacks.',
+  fbImportTitle:'Move from Xray configs', fbImportHint:'The outbound is copied into xsub; the XKeen file is not changed — you can delete it there afterwards.', fbImported:'already moved', fbLegacy:'current fallback', fbImportBtn:'Move',
+  fallback:'fallback', up:'Up', downBtn:'Down', fbOnline:'working', fbOffline:'not responding',
   del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
   lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'active', badUntil:'excluded until', select:'Select', for:'for',
   nodesHint:'Reliability is the share of successful download checks: the active node is checked on every watchdog run, each spare node in the background once per N minutes (see Settings). On failure reliable nodes are tried first, then fast ones.',
@@ -312,7 +341,7 @@ en: {
   groups:'Groups', groupsHint:'A group sends its own list through its own subset of nodes, e.g. "YouTube via Netherlands". The filter is a regular expression on node names. If no nodes match, the group uses the main target. Edit the group list in the tab above.',
   addGroup:'+ Add group', saveGroups:'Save groups', phGName:'Group name', phGFilter:'Node filter, e.g. (?i)netherlands|NL', matched:'matching nodes', noGroups:'No groups.',
   routeTitle:'Where will this site go?', routePh:'domain, link or IP address', routeBtn:'Check', rList:'List', rRule:'Rule', rVia:'Currently via',
-  setMain:'Subscriptions and nodes', sInterval:'Update subscriptions', sUA:'Default User-Agent', sMax:'Nodes per subscription', sFallback:'Fallback outbound', hFallback:'used when no subscription node works', none:'— none —',
+  setMain:'Subscriptions and nodes', sInterval:'Update subscriptions', sUA:'Default User-Agent', sMax:'Nodes per subscription', none:'— none —',
   setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval', sWFails:'Failures before switch', sWBg:'Spare node checks', hBg:'each node once per N minutes; 0 — off', sWSize:'Check size', hSize:'a common block triggers at 16–20 KB — use more', sWRestart:'Restart XKeen', hRestart:'if Xray crashed; skipped when mihomo runs', sWUrls:'Sites to check', hUrls:'must also open through the node; one address per line',
   sTgToken:'Bot token', sTgChat:'chat_id', sTgDays:'Subscription end', hTgDays:'warn this many days ahead', sTgPct:'Traffic used', hTgPct:'warn at this percentage', sTgSwitch:'Node switches', sTgUpdate:'New xsub versions', sTgTest:'Send a test message',
   sTgHint:'Create a bot with @BotFather and send it any message; get your chat_id from @userinfobot. If Telegram is blocked, messages go through the VPN.',
@@ -320,7 +349,8 @@ en: {
   uHours:'h', uSec:'s', uMin:'min', uKB:'KB', uDays:'days', uPct:'%',
   saveSettings:'Save settings', restarting:'Saved, xsub is restarting…',
   setBackup:'Backup', backupHint:'All settings, subscriptions, lists and groups in one file. It contains subscription links and the password — keep it secret.', backupBtn:'Download backup', restoreBtn:'Restore from file', restoring:'Restoring…',
-  setUpdate:'Update', updCheck:'Check', updBtn:'Update', curVer:'Installed version', newVer:'Available version', upToDate:'This is the latest version.', updStarted:'Update started, the page will reload by itself…', updConfirm:'Update xsub now?',
+  diagFix:'Needs attention', diagTitle:'Environment', diagHint:'After installing XKeen (Xray core) and xsub, nothing has to be edited in the Xray configs by hand. This shows whether everything is in place.', diagRecheck:'Check again', diagCmd:'How to fix',
+  setUpdate:'Update', updCheck:'Check', updBtn:'Update', curVer:'Installed version', newVer:'Available version', upToDate:'This is the latest version.', updStarted:'Update started, the page will reload by itself…', updConfirm:'Update xsub now?', updUnknown:'Press "Check" to see whether a new version is available.',
   bannerNew:'A new xsub version is available', bannerGo:'Update in Settings'
 }};
 let lang = 'ru';
@@ -346,14 +376,14 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n-ph]').forEach(e => e.placeholder = t(e.dataset.i18nPh));
   $('tabs').innerHTML = TABS.map(k => '<button class="' + (k === curTab ? 'on' : '') + '" onclick="tab(\'' + k + '\')">' + t(TABKEY[k]) + '</button>').join('');
 }
-function setLang(l) { lang = l; try { localStorage.setItem('xsub-lang', l); } catch (e) {} applyI18n(); render(); renderLists(); renderSubs(); renderGroups(); }
+function setLang(l) { lang = l; try { localStorage.setItem('xsub-lang', l); } catch (e) {} applyI18n(); render(); renderLists(); renderSubs(); renderFbs(); renderGroups(); }
 function tab(k) {
   if (k !== 'lists' && dirty && !confirm(t('unsaved'))) return;
   if (k !== 'lists') dirty = false;
   curTab = k;
   document.querySelectorAll('[data-tab]').forEach(e => e.classList.toggle('hide', e.dataset.tab !== k));
   applyI18n();
-  if (k === 'settings') loadSettings();
+  if (k === 'settings') { loadSettings(); loadDiag(); }
 }
 
 async function post(url, body) {
@@ -400,7 +430,7 @@ function render() {
   const ts = s.targets || [];
   $('targets').innerHTML = ts.length ? ts.map(tg => {
     const name = tg.id ? tg.name : t('mainTarget');
-    const node = tg.active ? esc(tg.active_name) + (tg.pinned ? '<span class="badge warn">' + t('manual') + '</span>' : '')
+    const node = tg.active ? esc(tg.active_name) + (tg.active.startsWith('fb-') ? '<span class="badge warn">' + t('fallback') + '</span>' : '') + (tg.pinned ? '<span class="badge warn">' + t('manual') + '</span>' : '')
       : '<span class="warn">' + t('noNode') + '</span>';
     return '<div class="card"><div class="muted">' + esc(name) + ' ' + t('via') + (tg.down ? '<span class="badge bad">' + t('down') + '</span>' : '') + '</div>' +
       '<div class="big">' + node + '</div><div class="muted">' + t('lastOK') + ': ' + when(tg.last_ok) + '</div>' +
@@ -417,9 +447,9 @@ function render() {
   // узлы
   const now = Date.now();
   const tgName = tg => tg.id ? tg.name : t('mainTarget');
-  $('nodes').innerHTML = (s.nodes || []).map(n => {
+  $('nodes').innerHTML = (s.nodes || []).concat(s.fallbacks || []).map(n => {
     const activeIn = ts.filter(tg => tg.active === n.tag);
-    const avail = ts.filter(tg => !tg.tags || tg.tags.includes(n.tag));
+    const avail = ts.filter(tg => n.fallback || !tg.tags || tg.tags.includes(n.tag));
     const bad = n.bad_until && new Date(n.bad_until).getTime() > now;
     const lat = n.latency_ms > 0 ? n.latency_ms + ' ms' : (n.latency_ms < 0 ? '<span class="bad">—</span>' : '<span class="muted">·</span>');
     const st = n.stats || {};
@@ -433,11 +463,12 @@ function render() {
     let btn = '';
     if (choices.length === 1) btn = '<button onclick="pick(\'' + esc(choices[0].id) + '\',\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
     else if (choices.length > 1) btn = '<select id="sel_' + esc(n.tag) + '">' + choices.map(tg => '<option value="' + esc(tg.id) + '">' + esc(tgName(tg)) + '</option>').join('') + '</select> <button onclick="pick($(\'sel_' + esc(n.tag) + '\').value,\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
-    return '<tr class="' + (activeIn.length ? 'active' : '') + '"><td>' + esc(n.name) + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
+    return '<tr class="' + (activeIn.length ? 'active' : '') + '"><td>' + esc(n.name) + (n.fallback ? '<span class="badge warn">' + t('fallback') + '</span>' : '') + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
       '</td><td style="min-width:150px">' + rel + '</td><td>' + state + '</td><td style="white-space:nowrap">' + btn + '</td></tr>';
   }).join('') || '<tr><td colspan="5" class="muted">' + t('noNodes') + '</td></tr>';
   $('log').textContent = (s.log || []).slice().reverse().join('\n');
   if (!subsDirty && !$('subs').contains(document.activeElement)) renderSubs();
+  if (!$('fbs').contains(document.activeElement)) renderFbs();
   if (!groupsDirty && !$('groups').contains(document.activeElement)) { groups = JSON.parse(JSON.stringify(s.groups || [])); renderGroups(); }
   renderListTabs();
 }
@@ -497,6 +528,69 @@ async function saveSubs() {
     subs = await (await fetch('/api/subs')).json() || []; renderSubs();
   } catch (e) { setMsg('smsg', 'bad', e.message); }
   $('ssave').disabled = false; setTimeout(load, 3000);
+}
+
+// ---------- окружение ----------
+let DIAG = [];
+function diagItem(x) {
+  const cls = {ok: 'ok', info: 'muted', warn: 'warn', bad: 'bad'}[x.level] || 'muted', mark = {ok: '✓', info: 'i', warn: '!', bad: '✗'}[x.level] || '·';
+  return '<div style="margin-bottom:6px"><span class="' + cls + '">' + mark + '</span> ' + esc(x.text) +
+    (x.fix ? '<div class="muted" style="margin-left:16px">' + esc(t('diagCmd')) + ': <code>' + esc(x.fix) + '</code></div>' : '') + '</div>';
+}
+function renderDiag() {
+  const probs = DIAG.filter(x => x.level === 'bad' || x.level === 'warn');
+  $('diagBox').classList.toggle('hide', !probs.length);
+  $('diagWarn').innerHTML = probs.map(diagItem).join('');
+  $('diagAll').innerHTML = DIAG.map(diagItem).join('');
+}
+async function loadDiag() {
+  try { DIAG = await (await fetch('/api/diag')).json() || []; } catch (e) { return; }
+  renderDiag();
+}
+
+// ---------- резервные узлы ----------
+let FB = {fallbacks: [], imports: []}, fbs = [];
+async function loadFbs() {
+  try { FB = await (await fetch('/api/fallbacks')).json(); } catch (e) { return; }
+  fbs = (FB.fallbacks || []).map(f => ({name: f.name, link: f.link || '', outbound: f.outbound, tag: f.tag, summary: f.summary, err: f.err}));
+  renderFbs();
+}
+function fbState(f) {
+  if (f.err) return '<div class="bad">' + esc(f.err) + '</div>';
+  const n = ((S && S.fallbacks) || []).find(x => x.tag === f.tag);
+  if (!n) return '';
+  const st = n.stats || {}, tot = (st.ok || 0) + (st.fail || 0);
+  let h = f.outbound ? '' : '<span class="muted">' + esc(f.summary || '') + '</span> · ';
+  if (tot) h += '<span class="' + (st.score >= 0.9 ? 'ok' : st.score >= 0.6 ? 'warn' : 'bad') + '">' + Math.round(st.score * 100) + '%</span> <span class="muted">(' + st.ok + '/' + tot + ', ' + t('lastTest') + ': ' + ago(st.last_test) + ')</span>';
+  if (n.last_err) h += '<div class="muted">' + esc(n.last_err) + '</div>';
+  return h;
+}
+function renderFbs() {
+  $('fbs').innerHTML = fbs.map((f, i) => {
+    const nm = '<input class="n" placeholder="' + esc(t('phName')) + '" value="' + esc(f.name || '') + '" oninput="fbs[' + i + '].name=this.value">';
+    const body = f.outbound ? '<span class="grow muted">' + esc(t('fbOutbound')) + (f.summary ? ': ' + esc(f.summary) : '') + '</span>'
+      : '<input autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="' + esc(t('phFbLink')) + '" value="' + esc(f.link || '') + '" oninput="fbs[' + i + '].link=this.value">';
+    const mv = (d, k) => '<button ' + ((i + d < 0 || i + d >= fbs.length) ? 'disabled ' : '') + 'onclick="moveFb(' + i + ',' + d + ')" title="' + esc(t(k)) + '">' + (d < 0 ? '↑' : '↓') + '</button>';
+    return '<div class="card"><div class="row"><span class="muted">' + (i + 1) + '.</span>' + nm + body + mv(-1, 'up') + mv(1, 'downBtn') +
+      '<button onclick="fbs.splice(' + i + ',1);renderFbs()">' + t('del') + '</button></div>' +
+      '<div style="margin-top:6px">' + fbState(f) + '</div></div>';
+  }).join('') || '<div class="muted">' + t('noFbs') + '</div>';
+  const imp = (FB.imports || []);
+  $('fbImports').innerHTML = imp.length ? '<h3>' + esc(t('fbImportTitle')) + '</h3><p class="muted">' + esc(t('fbImportHint')) + '</p>' +
+    imp.map(c => '<div class="row" style="margin-bottom:6px"><code>' + esc(c.tag) + '</code><span class="muted">' + esc(c.summary) + '</span>' +
+      (c.legacy ? '<span class="badge warn">' + esc(t('fbLegacy')) + '</span>' : '') +
+      (c.imported ? '<span class="badge ok">' + esc(t('fbImported')) + '</span>' : '<button onclick="importFb(\'' + esc(c.tag) + '\')">' + esc(t('fbImportBtn')) + '</button>') + '</div>').join('') : '';
+}
+function moveFb(i, d) { const x = fbs[i]; fbs[i] = fbs[i + d]; fbs[i + d] = x; renderFbs(); }
+function addFb() { fbs.push({name: '', link: ''}); renderFbs(); }
+function importFb(tag) { saveFbs(fbs.concat([{name: tag, import: tag}])); }
+async function saveFbs(list) {
+  list = (list || fbs).filter(f => f.import || f.outbound || (f.link || '').trim() !== '')
+    .map(f => f.import ? {name: f.name, import: f.import} : f.outbound ? {name: f.name, outbound: f.outbound} : {name: f.name, link: f.link});
+  $('fbsave').disabled = true; setMsg('fbmsg', 'muted', t('applying'));
+  try { await post('/api/fallbacks', JSON.stringify(list)); setMsg('fbmsg', 'ok', t('applied')); await loadFbs(); }
+  catch (e) { setMsg('fbmsg', 'bad', e.message); }
+  $('fbsave').disabled = false; load();
 }
 
 // ---------- списки ----------
@@ -583,21 +677,26 @@ async function loadSettings() {
   const s = SET.settings, w = s.watchdog, tg = s.telegram;
   const v = (id, x) => $(id).value = x ?? '', c = (id, x) => $(id).checked = !!x;
   v('s_sub_interval_hours', s.sub_interval_hours); v('s_user_agent', s.user_agent); v('s_max_nodes', s.max_nodes);
-  $('s_fallback_tag').innerHTML = '<option value="">' + esc(t('none')) + '</option>' + (SET.outbounds || []).sort().map(o => '<option>' + esc(o) + '</option>').join('');
-  v('s_fallback_tag', s.xray.fallback_tag);
   c('s_w_enabled', w.enabled); v('s_w_interval_sec', w.interval_sec); v('s_w_fails_to_switch', w.fails_to_switch);
   v('s_w_background_cycle_min', w.background_cycle_min); v('s_w_test_kb', Math.round((w.test_bytes || 32768) / 1024)); c('s_w_restart_xray', w.restart_xray); v('s_w_check_urls', (w.check_urls || []).join('\n'));
   v('s_tg_token', tg.token); v('s_tg_chat_id', tg.chat_id); v('s_tg_expire_days', tg.expire_days); v('s_tg_traffic_pct', tg.traffic_pct);
   c('s_tg_on_switch', tg.on_switch); c('s_tg_on_update', tg.on_update);
   v('s_password', ''); c('s_ui_allow_wan', s.ui_allow_wan);
   const lf = $('s_log_file'); if (![...lf.options].some(o => o.value === s.log_file)) lf.add(new Option(s.log_file, s.log_file)); v('s_log_file', s.log_file);
-  $('uver').textContent = t('curVer') + ': ' + ((S && S.version) || '') + (S && S.latest ? ' · ' + t('newVer') + ': ' + S.latest : '');
+  updView();
+}
+// кнопка «Обновить» доступна, только если на GitHub есть версия новее установленной
+function updView() {
+  const cur = (S && S.version) || '', latest = (S && S.latest) || '', newer = latest && newerThan(cur, latest);
+  $('uver').textContent = t('curVer') + ': ' + cur + (newer ? ' · ' + t('newVer') + ': ' + latest : latest ? ' · ' + t('upToDate') : '');
+  $('updBtn').disabled = !newer;
+  $('updBtn').title = newer ? '' : t(latest ? 'upToDate' : 'updUnknown');
 }
 function collectSettings() {
   const n = id => parseInt($(id).value, 10) || 0, v = id => $(id).value, c = id => $(id).checked;
   return {
     password: v('s_password'), sub_interval_hours: n('s_sub_interval_hours'), user_agent: v('s_user_agent'), max_nodes: n('s_max_nodes'),
-    log_file: v('s_log_file'), ui_allow_wan: c('s_ui_allow_wan'), xray: {fallback_tag: v('s_fallback_tag')},
+    log_file: v('s_log_file'), ui_allow_wan: c('s_ui_allow_wan'),
     watchdog: {enabled: c('s_w_enabled'), interval_sec: n('s_w_interval_sec'), fails_to_switch: n('s_w_fails_to_switch'),
       background_cycle_min: n('s_w_background_cycle_min'), test_bytes: n('s_w_test_kb') * 1024, restart_xray: c('s_w_restart_xray'),
       check_urls: v('s_w_check_urls').split('\n').map(x => x.trim()).filter(Boolean)},
@@ -625,8 +724,8 @@ async function updCheck() {
   $('uver').textContent = '…';
   try {
     const r = await post('/api/update/check');
-    $('uver').textContent = t('curVer') + ': ' + ((S && S.version) || '') + ' · ' + (r.newer ? t('newVer') + ': ' + r.latest : t('upToDate'));
     if (S) { S.latest = r.latest; render(); }
+    updView();
   } catch (e) { $('uver').textContent = e.message; }
 }
 async function doUpdate() {
@@ -647,6 +746,8 @@ async function doUpdate() {
   await load();
   try { subs = await (await fetch('/api/subs')).json() || []; } catch (e) {}
   renderSubs();
+  await loadFbs();
+  loadDiag(); setInterval(loadDiag, 300000);
   await fetchList('vpn'); showList(); renderListTabs();
   setInterval(load, 10000);
 })();

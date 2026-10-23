@@ -24,6 +24,7 @@ type NodeState struct {
 	BadUntil  time.Time  `json:"bad_until"`
 	LastErr   string     `json:"last_err"`
 	Stats     *NodeStats `json:"stats"`
+	Fallback  bool       `json:"fallback,omitempty"` // резервный узел xsub
 }
 
 // Target — то, за чем следит сторож: основной балансировщик или балансировщик группы.
@@ -41,6 +42,9 @@ type Target struct {
 
 func (t *Target) has(tag string) bool { return t.tags == nil || t.tags[tag] }
 
+// allows — узел можно назначить цели: её собственный или резервный (резервы общие для всех).
+func (t *Target) allows(tag string) bool { return isFallbackTag(tag) || t.has(tag) }
+
 func (t *Target) where() string {
 	if t.ID == "" {
 		return ""
@@ -53,6 +57,7 @@ type Watcher struct {
 
 	mu        sync.Mutex
 	nodes     []*NodeState
+	fbs       []*NodeState // резервные узлы: включаются, когда не работает ни один узел подписок
 	targets   []*Target
 	stats     map[string]*NodeStats // переживает обновление подписки
 	xrayStart string
@@ -71,17 +76,19 @@ func (w *Watcher) say(key, kind, text string) {
 	}
 }
 
-// setNodes обновляет узлы и цели, сохраняя накопленное состояние.
-func (w *Watcher) setNodes(nodes []Node, defs []TargetDef) {
+// setNodes обновляет узлы, резервы и цели, сохраняя накопленное состояние.
+// Тестовые порты: узлы с test_port_base, за ними резервы (как в generate).
+func (w *Watcher) setNodes(nodes, fbs []Node, defs []TargetDef) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	old := map[string]*NodeState{}
-	for _, n := range w.nodes {
+	for _, n := range append(append([]*NodeState(nil), w.nodes...), w.fbs...) {
 		old[n.Tag] = n
 	}
-	var ns []*NodeState
-	for i, n := range nodes {
-		st := &NodeState{Node: n}
+	all := append(append([]Node(nil), nodes...), fbs...)
+	var ns, fs []*NodeState
+	for i, n := range all {
+		st := &NodeState{Node: n, Fallback: i >= len(nodes)}
 		if o, ok := old[n.Tag]; ok {
 			st.LatencyMs, st.CheckedAt, st.BadUntil, st.LastErr = o.LatencyMs, o.CheckedAt, o.BadUntil, o.LastErr
 		}
@@ -90,9 +97,13 @@ func (w *Watcher) setNodes(nodes []Node, defs []TargetDef) {
 		}
 		st.Stats = w.stats[n.Tag]
 		st.TestPort = w.c.Xray.TestPortBase + i
-		ns = append(ns, st)
+		if st.Fallback {
+			fs = append(fs, st)
+		} else {
+			ns = append(ns, st)
+		}
 	}
-	w.nodes = ns
+	w.nodes, w.fbs = ns, fs
 
 	oldT := map[string]*Target{}
 	for _, t := range w.targets {
@@ -113,7 +124,7 @@ func (w *Watcher) setNodes(nodes []Node, defs []TargetDef) {
 		if o, ok := oldT[d.ID]; ok {
 			t.Active, t.Pinned, t.Fails, t.LastOK, t.Down, t.lastSelect, t.Slots = o.Active, o.Pinned, o.Fails, o.LastOK, o.Down, o.lastSelect, o.Slots
 		}
-		if t.Active != "" && (!t.has(t.Active) || w.find(t.Active) == nil) {
+		if t.Active != "" && (!t.allows(t.Active) || w.find(t.Active) == nil) {
 			t.Active, t.Pinned = "", false
 		}
 		ts = append(ts, t)
@@ -123,6 +134,11 @@ func (w *Watcher) setNodes(nodes []Node, defs []TargetDef) {
 
 func (w *Watcher) find(tag string) *NodeState {
 	for _, n := range w.nodes {
+		if n.Tag == tag {
+			return n
+		}
+	}
+	for _, n := range w.fbs {
 		if n.Tag == tag {
 			return n
 		}
@@ -237,7 +253,7 @@ func (w *Watcher) internetOK() bool {
 // checkAll меряет задержку всех узлов параллельно (по 4 сразу).
 func (w *Watcher) checkAll() {
 	w.mu.Lock()
-	nodes := append([]*NodeState(nil), w.nodes...)
+	nodes := append(append([]*NodeState(nil), w.nodes...), w.fbs...)
 	w.mu.Unlock()
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
@@ -326,6 +342,8 @@ func (w *Watcher) selectNode(t *Target, reason string) {
 		n.BadUntil, n.LastErr = time.Time{}, ""
 		w.mu.Unlock()
 		switch {
+		case isFallbackTag(prev):
+			w.say("up"+t.ID, "up", fmt.Sprintf("%s%s: узлы подписки снова работают — выбран «%s»", reason, t.where(), n.Name))
 		case wasDown:
 			w.say("up"+t.ID, "up", fmt.Sprintf("%s%s: связь восстановлена через «%s»", reason, t.where(), n.Name))
 		case prev != "" && prev != n.Tag:
@@ -335,14 +353,51 @@ func (w *Watcher) selectNode(t *Target, reason string) {
 		}
 		return
 	}
+	if w.tryFallbacks(t, prev, reason, tried) {
+		return
+	}
 	_ = w.override(t.Balancer, "")
 	w.mu.Lock()
 	wasDown := t.Down
 	t.Active, t.Pinned, t.Down = "", false, true
 	w.mu.Unlock()
-	if !wasDown {
+	if !wasDown || isFallbackTag(prev) {
 		w.say("down"+t.ID, "down", fmt.Sprintf("%s%s: рабочих узлов не нашлось (проверено: %d) — трафик идёт через автовыбор Xray", reason, t.where(), tried))
 	}
+}
+
+// tryFallbacks — ни один узел подписок не работает: пробуем резервы по порядку.
+func (w *Watcher) tryFallbacks(t *Target, prev, reason string, tried int) bool {
+	w.mu.Lock()
+	fbs := append([]*NodeState(nil), w.fbs...)
+	w.mu.Unlock()
+	for _, n := range fbs {
+		err := w.realTest(n.TestPort)
+		w.record(n.Tag, err == nil)
+		if err != nil {
+			w.mu.Lock()
+			n.LastErr = "загрузка: " + shortErr(err)
+			w.mu.Unlock()
+			continue
+		}
+		if err := w.override(t.Balancer, n.Tag); err != nil {
+			lg.Printf("не удалось переключить балансировщик %s: %v", t.Balancer, err)
+			return true
+		}
+		w.mu.Lock()
+		t.Active, t.Pinned, t.Fails, t.LastOK, t.Down = n.Tag, false, 0, time.Now(), false
+		n.BadUntil, n.LastErr = time.Time{}, ""
+		w.mu.Unlock()
+		if prev != n.Tag {
+			if isFallbackTag(prev) {
+				w.say("switch"+t.ID, "switch", fmt.Sprintf("%s%s: переключено на резерв «%s»", reason, t.where(), n.Name))
+			} else {
+				w.say("down"+t.ID, "down", fmt.Sprintf("%s%s: рабочих узлов подписок не нашлось (проверено: %d) — работаю через резерв «%s»", reason, t.where(), tried, n.Name))
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // override закрепляет балансировщик за узлом (tag="" — снять закрепление).
@@ -370,7 +425,7 @@ func (w *Watcher) pin(targetID, tag string) error {
 	w.mu.Lock()
 	t := w.target(targetID)
 	n := w.find(tag)
-	ok := t != nil && n != nil && t.has(tag)
+	ok := t != nil && n != nil && t.allows(tag)
 	w.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("нет такого узла в этой группе")
@@ -487,6 +542,8 @@ func (w *Watcher) tick() {
 	w.background()
 }
 
+const fallbackRetry = 10 * time.Minute
+
 func (w *Watcher) checkTarget(t *Target) {
 	w.mu.Lock()
 	active, pinned, since := t.Active, t.Pinned, time.Since(t.lastSelect)
@@ -495,6 +552,11 @@ func (w *Watcher) checkTarget(t *Target) {
 		if since > 5*time.Minute {
 			w.selectNode(t, "поиск рабочего узла")
 		}
+		return
+	}
+	// На резерве (не выбранном вручную) — раз в 10 минут пробуем вернуться на узлы подписки.
+	if isFallbackTag(active) && !pinned && since > fallbackRetry {
+		w.selectNode(t, "возврат с резерва")
 		return
 	}
 	err := w.realTest(t.ProbePort)
@@ -553,7 +615,7 @@ func (w *Watcher) background() {
 	for _, t := range w.targets {
 		active[t.Active] = true
 	}
-	due := pickDue(w.nodes, active, time.Now(), cycle, tick)
+	due := pickDue(append(append([]*NodeState(nil), w.nodes...), w.fbs...), active, time.Now(), cycle, tick)
 	w.mu.Unlock()
 	for _, n := range due {
 		err := w.realTest(n.TestPort)
@@ -621,9 +683,10 @@ type TargetStatus struct {
 }
 
 type Status struct {
-	Targets []TargetStatus `json:"targets"`
-	XrayUp  bool           `json:"xray_up"`
-	Nodes   []*NodeState   `json:"nodes"`
+	Targets   []TargetStatus `json:"targets"`
+	XrayUp    bool           `json:"xray_up"`
+	Nodes     []*NodeState   `json:"nodes"`
+	Fallbacks []*NodeState   `json:"fallbacks"`
 }
 
 func (w *Watcher) status() Status {
@@ -636,14 +699,20 @@ func (w *Watcher) status() Status {
 			Down: t.Down, LastOK: t.LastOK, Tags: t.Tags, Slots: append([]Slot(nil), t.Slots...),
 		})
 	}
-	for _, n := range w.nodes {
+	copyNode := func(n *NodeState) *NodeState {
 		cp := *n
 		if n.Stats != nil {
 			sc := *n.Stats
 			sc.Slots = append([]Slot(nil), n.Stats.Slots...)
 			cp.Stats = &sc
 		}
-		s.Nodes = append(s.Nodes, &cp)
+		return &cp
+	}
+	for _, n := range w.nodes {
+		s.Nodes = append(s.Nodes, copyNode(n))
+	}
+	for _, n := range w.fbs {
+		s.Fallbacks = append(s.Fallbacks, copyNode(n))
 	}
 	return s
 }

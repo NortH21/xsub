@@ -1,6 +1,6 @@
 # xsub
 
-[Русский](README.md)
+[Русский](README.md) · News: [t.me/xsuby](https://t.me/xsuby) · Chat: [t.me/xsuby_chat](https://t.me/xsuby_chat)
 
 Subscriptions, domain lists and a node watchdog for **XKeen + Xray** on Keenetic / Netcraze routers.
 
@@ -14,6 +14,7 @@ XKeen intercepts traffic and runs Xray. xsub takes care of the contents:
   Nodes can be filtered by name; informational entries from panels ("10 GB left" etc.) are skipped. Traffic usage and expiry are shown when the panel provides them. Multiple subscriptions are supported.
 - **Watchdog.** Every minute the active node is checked with a **real download** (32 KB by default — above the 16–20 KB threshold of a common block; configurable). This catches blocking where short probes such as `generate_204` pass but real traffic is cut. You can add your own addresses that must also open through the node. Switching goes through the Xray API, without restarting the core.
 - **Node reliability.** Every spare node is download-checked in the background once per 30 minutes (configurable), spread evenly over time. Each node keeps a 24-hour history, and on failure reliable nodes are tried first, not just the fastest ones by ping.
+- **Fallback nodes.** Your own servers for when no subscription node works: added as a link (`vless://`, `socks://`, `http://` and anything else xsub understands) or moved from the XKeen configs (e.g. `04_outbounds.json`) with one click. The watchdog checks them like regular nodes, switches to a fallback when the whole subscription is down and tries to switch back every 10 minutes.
 - **Groups.** Send a list through its own subset of nodes, e.g. "YouTube via Netherlands" or "ChatGPT via US only". Each group has its own balancer and watchdog.
 - **"Via VPN" and "Direct" lists** are edited on the web page; remote lists can be added by URL (updated daily). Everything is checked with `xray -test` on a copy of the configs before it is applied; on error nothing changes.
 - **"Where will this site go?"** — enter a domain, link or IP and see which rule matches and which node the traffic will use (including categories from `.dat` files).
@@ -39,7 +40,11 @@ Over SSH on the router (Entware shell):
 curl -fsSL https://raw.githubusercontent.com/furriest/xsub/main/install.sh | sh
 ```
 
-The installer detects the architecture, installs the package, creates the config and prints the page address, login and password. Open `http://<router-IP>:8099/` and add your subscription link. Until a subscription is added, xsub does not touch the Xray configs.
+The installer detects the architecture, installs the package, creates the config and prints the page address, login and password. Open `http://<router-IP>:8099/` and add your subscription link. If XKeen is not installed, the installer offers to install it (choose the Xray core there); if XKeen has no Xray core or runs mihomo, it offers `xkeen -ux` / `xkeen -xray`. Without a terminal it installs nothing unasked; `XSUB_YES=1` answers yes to everything.
+
+Until a subscription is added, xsub does not touch the Xray configs.
+
+Nothing has to be edited in the Xray configs by hand: after installing XKeen (Xray core) and xsub, everything is set up on the web page. Settings → Environment shows whether XKeen, the core, autostart and the inbounds (with sniffing) are in place and suggests a command if not. Optional, on the Keenetic/XKeen side: encrypted DNS (DoT/DoH), an `xkeen` policy if only some devices should use the VPN, IPv6 (`xkeen -ipv6`), and XKeen's "exclude Russian IPs" option, which keeps those addresses away from Xray even if a site is on the "Via VPN" list.
 
 To update via `opkg upgrade`, add the package feed:
 
@@ -108,6 +113,11 @@ VERSION=0.4.0 REPO=furriest/xsub scripts/build.sh   # → dist/
 ```
 
 Releases are built by GitHub Actions on `v*` tags; the opkg feed is published to GitHub Pages.
+
+## Community
+
+- News and releases channel (in Russian): [t.me/xsuby](https://t.me/xsuby)
+- Chat for questions and discussion: [t.me/xsuby_chat](https://t.me/xsuby_chat)
 
 ## License
 

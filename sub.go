@@ -258,12 +258,45 @@ func isInfoAddress(host string, port int) bool {
 	return false
 }
 
-func nodeTag(link string) string {
-	if i := strings.Index(link, "#"); i >= 0 {
-		link = link[:i]
+// identityTag — тег узла по тому, куда он подключается: протокол, адрес, порт, транспорт,
+// шифрование, SNI и путь. Не зависит от имени и параметров, которые панели меняют
+// при каждой выдаче подписки (Remnawave, например, выбирает случайный shortId):
+// иначе после каждого обновления подписки узлы получали бы новые теги, теряли историю
+// проверок и сторож заново выбирал узел.
+func identityTag(prefix string, ob map[string]any) string {
+	host, port := outboundAddr(ob)
+	ss, _ := ob["streamSettings"].(map[string]any)
+	get := func(m map[string]any, keys ...string) string {
+		for i, k := range keys {
+			if i == len(keys)-1 {
+				return anyStr(m[k])
+			}
+			m, _ = m[k].(map[string]any)
+			if m == nil {
+				return ""
+			}
+		}
+		return ""
 	}
-	h := sha1.Sum([]byte(link))
-	return "node-" + hex.EncodeToString(h[:])[:8]
+	parts := []string{anyStr(ob["protocol"]), strings.ToLower(host), strconv.Itoa(port)}
+	if ss != nil {
+		sni := get(ss, "tlsSettings", "serverName")
+		if sni == "" {
+			sni = get(ss, "realitySettings", "serverName")
+		}
+		path := ""
+		for _, k := range []string{"wsSettings", "httpupgradeSettings", "xhttpSettings", "splithttpSettings"} {
+			if p := get(ss, k, "path"); p != "" {
+				path = p
+			}
+		}
+		if s := get(ss, "grpcSettings", "serviceName"); s != "" {
+			path = s
+		}
+		parts = append(parts, anyStr(ss["network"]), anyStr(ss["security"]), strings.ToLower(sni), path)
+	}
+	h := sha1.Sum([]byte(strings.Join(parts, "|")))
+	return prefix + hex.EncodeToString(h[:])[:8]
 }
 
 func hostPort(u *url.URL) (string, int, error) {

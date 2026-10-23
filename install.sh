@@ -6,6 +6,7 @@
 # Переменные:
 #   XSUB_VERSION=v0.2.0  — конкретная версия (по умолчанию последняя)
 #   XSUB_FEED=1          — подключить репозиторий opkg, чтобы обновляться через «opkg upgrade»
+#   XSUB_YES=1           — без вопросов: если нет XKeen или ядра Xray, установить их
 set -e
 
 REPO="${XSUB_REPO:-furriest/xsub}"
@@ -13,6 +14,21 @@ TMP=/opt/tmp/xsub.ipk
 
 say() { echo "xsub: $*"; }
 die() { echo "xsub: $*" >&2; exit 1; }
+
+# ask "вопрос" — да/нет с клавиатуры (скрипт обычно идёт через «curl | sh», поэтому читаем /dev/tty).
+# Без терминала (ssh без -t, cron) — «нет»: ничего не ставим без спроса. XSUB_YES=1 — «да» на всё.
+ask() {
+  [ "$XSUB_YES" = "1" ] && return 0
+  [ "$TTY" = /dev/tty ] || return 1
+  printf 'xsub: %s [Д/н] ' "$1" > /dev/tty
+  read -r ans < /dev/tty || return 1
+  case "$ans" in n*|N*|н*|Н*) return 1 ;; esac
+  return 0
+}
+running() { for d in /proc/[0-9]*; do [ "$(cat "$d/comm" 2>/dev/null)" = "$1" ] && return 0; done; return 1; }
+XKEEN_URL=https://raw.githubusercontent.com/jameszeroX/XKeen/main/install.sh
+TTY=/dev/null
+{ [ -r /dev/tty ] && : < /dev/tty; } 2>/dev/null && TTY=/dev/tty
 
 command -v opkg >/dev/null 2>&1 || die "не найден opkg — нужен Entware (Keenetic: компонент «Поддержка открытых пакетов»)."
 
@@ -47,7 +63,40 @@ else
   die "нужен curl: opkg install curl"
 fi
 
-[ -x /opt/sbin/xray ] || say "внимание: не найден /opt/sbin/xray — xsub работает с XKeen на ядре Xray (xkeen -xray)."
+# ---------- XKeen и ядро Xray ----------
+# xsub только наполняет конфиги Xray; перехватывает трафик и запускает ядро XKeen.
+if [ ! -x /opt/sbin/xkeen ]; then
+  say "XKeen не установлен — без него трафик устройств не попадёт в Xray."
+  if ask "Установить XKeen сейчас? (в его установщике выберите ядро Xray)"; then
+    opkg update && opkg install curl tar || die "не удалось установить curl и tar."
+    curl -fsSL "$XKEEN_URL" -o /opt/tmp/xkeen-install.sh || die "не удалось скачать установщик XKeen."
+    # без терминала (XSUB_YES=1) — автоустановка XKeen только с ядром Xray
+    [ "$TTY" = /dev/tty ] || sed -i 's#^exec /opt/sbin/xkeen -i$#exec /opt/sbin/xkeen -i auto cores=xray#' /opt/tmp/xkeen-install.sh
+    (cd /tmp && sh /opt/tmp/xkeen-install.sh < "$TTY") || say "установщик XKeen завершился с ошибкой — xsub ставлю, XKeen доустановите позже."
+    rm -f /opt/tmp/xkeen-install.sh
+  else
+    say "XKeen можно поставить позже:"
+    say "  opkg update && opkg install curl tar && sh -c \"\$(curl -sSL $XKEEN_URL)\""
+  fi
+fi
+if [ -x /opt/sbin/xkeen ]; then
+  if [ ! -x /opt/sbin/xray ]; then
+    say "у XKeen нет ядра Xray."
+    if ask "Установить Xray (xkeen -ux auto)?"; then
+      /opt/sbin/xkeen -ux auto || say "не получилось — выполните вручную: xkeen -ux"
+    else
+      say "установите позже: xkeen -ux"
+    fi
+  fi
+  if [ -x /opt/sbin/xray ] && running mihomo && ! running xray; then
+    say "XKeen сейчас работает на ядре mihomo, а xsub управляет только Xray."
+    if ask "Переключить XKeen на Xray (xkeen -xray)?"; then
+      /opt/sbin/xkeen -xray < "$TTY" || say "не получилось — выполните вручную: xkeen -xray"
+    else
+      say "переключить можно позже: xkeen -xray"
+    fi
+  fi
+fi
 
 opkg install "$TMP"
 rm -f "$TMP"

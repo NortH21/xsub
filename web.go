@@ -115,6 +115,20 @@ func (a *App) handler() http.Handler {
 		result(w, a.saveGroups(gs))
 	})
 
+	// проверка окружения (XKeen, ядро, входы)
+	get("/api/diag", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, diagnose(a.c)) })
+
+	// резервные узлы
+	get("/api/fallbacks", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, a.uiFallbacks()) })
+	post("/api/fallbacks", func(w http.ResponseWriter, r *http.Request) {
+		var fs []Fallback
+		if err := body(r, &fs); err != nil {
+			result(w, err)
+			return
+		}
+		result(w, a.saveFallbacks(fs))
+	})
+
 	// geo и внешние списки
 	post("/api/geo/refresh", func(w http.ResponseWriter, r *http.Request) {
 		a.updateGeo(true)
@@ -163,7 +177,26 @@ func (a *App) handler() http.Handler {
 		a.mu.Unlock()
 		writeJSON(w, map[string]any{"ok": true, "latest": l, "newer": newerVersion(version, l)})
 	})
-	post("/api/update", func(w http.ResponseWriter, r *http.Request) { result(w, a.startUpgrade()) })
+	post("/api/update", func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		l := a.latest
+		a.mu.Unlock()
+		if l == "" {
+			a.checkUpdate()
+			a.mu.Lock()
+			l = a.latest
+			a.mu.Unlock()
+		}
+		if l == "" {
+			result(w, errString("не удалось узнать последнюю версию на GitHub — попробуйте позже"))
+			return
+		}
+		if !newerVersion(version, l) {
+			result(w, errString("новой версии нет — установлена последняя ("+version+")"))
+			return
+		}
+		result(w, a.startUpgrade())
+	})
 	get("/api/update/log", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := os.ReadFile(updateLog)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

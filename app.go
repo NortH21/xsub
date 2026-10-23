@@ -34,6 +34,7 @@ type App struct {
 	subs      []Subscription
 	states    map[string]*SubState // по URL
 	nodes     []Node
+	fbs       []Node // резервные узлы, принятые Xray
 	geoAt     time.Time
 	geoErr    string
 	applyErr  string
@@ -106,28 +107,37 @@ func (a *App) afterRestart(reason string) {
 // apply — применить узлы и списки. Под opMu.
 // Пока xsub ни разу не управлял Xray и узлов нет, конфиги не трогаем.
 func (a *App) apply(nodes []Node, reason string, force bool) error {
-	if !force && len(nodes) == 0 && !managed(a.c) {
+	fbs, fbWarns := fallbackNodes(a.c, a.sockopt())
+	if !force && len(nodes) == 0 && len(fbs) == 0 && !managed(a.c) {
 		a.mu.Lock()
-		a.nodes = nil
+		a.nodes, a.fbs = nil, nil
 		a.mu.Unlock()
-		a.w.setNodes(nil, nil)
+		a.w.setNodes(nil, nil, nil)
 		return nil
 	}
-	good, bad := validateNodes(a.c, nodes)
+	good, bad := validateNodes(a.c, append(append([]Node(nil), nodes...), fbs...))
+	bad = append(fbWarns, bad...)
 	for _, b := range bad {
 		lg.Printf("%s", b)
 	}
 	a.mu.Lock()
 	a.badNodes = bad
 	a.mu.Unlock()
-	nodes = good
-	changed, err := applyConfig(a.c, nodes, reason)
+	nodes, fbs = nil, nil
+	for _, n := range good {
+		if isFallbackTag(n.Tag) {
+			fbs = append(fbs, n)
+		} else {
+			nodes = append(nodes, n)
+		}
+	}
+	changed, err := applyConfig(a.c, nodes, fbs, reason)
 	a.mu.Lock()
 	if err != nil {
 		a.applyErr = err.Error()
 	} else {
 		a.applyErr = ""
-		a.nodes = nodes
+		a.nodes, a.fbs = nodes, fbs
 	}
 	a.mu.Unlock()
 	if err != nil {
@@ -136,7 +146,7 @@ func (a *App) apply(nodes []Node, reason string, force bool) error {
 	}
 	a.rememberWritten()
 	groups, _ := loadGroups(a.c)
-	a.w.setNodes(nodes, targetDefs(a.c, nodes, groups))
+	a.w.setNodes(nodes, fbs, targetDefs(a.c, nodes, groups))
 	if rs, _, err := readRouting(a.c); err == nil {
 		a.mu.Lock()
 		a.listWarns = rs.Warnings

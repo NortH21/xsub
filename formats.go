@@ -1,9 +1,7 @@
 package main
 
 import (
-	"crypto/sha1"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -315,6 +313,15 @@ func xrayConfigNode(cfg map[string]any, name string, sockopt any) (Node, error) 
 	if ob == nil {
 		return Node{}, fmt.Errorf("нет подходящего outbound")
 	}
+	return outboundNode(ob, name, sockopt, "node-")
+}
+
+// outboundNode превращает готовый outbound Xray в узел: проверяет, добавляет метку XKeen
+// (sockopt), выставляет тег prefix+хеш. ob изменяется.
+func outboundNode(ob map[string]any, name string, sockopt any, prefix string) (Node, error) {
+	if !xrayProxyProtocols[anyStr(ob["protocol"])] {
+		return Node{}, fmt.Errorf("протокол %q не подходит", anyStr(ob["protocol"]))
+	}
 	if ps, ok := ob["proxySettings"]; ok && ps != nil {
 		return Node{}, fmt.Errorf("цепочки прокси не поддерживаются")
 	}
@@ -351,9 +358,7 @@ func xrayConfigNode(cfg map[string]any, name string, sockopt any) (Node, error) 
 		}
 	}
 	delete(ob, "tag")
-	b, _ := json.Marshal(ob)
-	h := sha1.Sum(b)
-	tag := "node-" + hex.EncodeToString(h[:])[:8]
+	tag := identityTag(prefix, ob)
 	ob["tag"] = tag
 	host, port := outboundAddr(ob)
 	if isInfoAddress(host, port) {
