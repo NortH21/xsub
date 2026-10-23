@@ -51,6 +51,31 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
 .hide{display:none}
 #msg{min-height:1.4em;margin-top:8px}
 #nodesTable td:first-child{min-width:150px}
+/* форма настроек: пары «подпись — поле», две пары в строке */
+.form{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content minmax(0,1fr);gap:10px 14px;align-items:start}
+.form .fh{grid-column:1/-1;margin:10px 0 0}
+.form .fh:first-child{margin-top:0}
+.form .fl{display:block;flex:none;justify-self:end;text-align:right;padding-top:7px;max-width:240px;color:var(--text)}
+.form .fv{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.form .fv.wide{grid-column:2/-1}
+.form .fv.full{grid-column:1/-1}
+.form .fv input:not([type=checkbox]),.form .fv select{width:100%;max-width:260px}
+.form .fv input.num{width:90px}
+.form .fv textarea{width:100%;min-height:70px}
+.form .fv input[type=checkbox]{width:18px;height:18px;margin:7px 0}
+.form .unit{color:var(--muted)}
+.form .hint{flex-basis:100%;color:var(--muted);font-size:12px;line-height:1.35}
+@media (max-width:760px){
+  .form{grid-template-columns:max-content minmax(0,1fr)}
+  .form .fl{max-width:170px}
+}
+@media (max-width:440px){
+  .form{grid-template-columns:minmax(0,1fr)}
+  .form .fl{justify-self:start;text-align:left;padding-top:4px;max-width:none;margin-bottom:-6px}
+  .form .fv.wide{grid-column:1/-1}
+  .form .fl-empty{display:none}
+}
+
 @media (max-width:640px){
   #nodesTable thead{display:none}
   #nodesTable tr{display:block;border-bottom:1px solid var(--line);padding:6px 0}
@@ -154,41 +179,54 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
 <!-- Настройки -->
 <div data-tab="settings" class="hide">
   <section>
-    <h2 data-i18n="setMain"></h2>
-    <div class="row">
-      <label><span data-i18n="sInterval"></span><input id="s_sub_interval_hours" type="number" min="1" max="168"></label>
-      <label><span data-i18n="sUA"></span><input id="s_user_agent"></label>
-      <label><span data-i18n="sMax"></span><input id="s_max_nodes" type="number" min="1" max="500"></label>
-      <label><span data-i18n="sFallback"></span><select id="s_fallback_tag"></select></label>
+    <div class="form">
+      <h2 class="fh" data-i18n="setMain"></h2>
+      <label class="fl" for="s_sub_interval_hours" data-i18n="sInterval"></label>
+      <div class="fv"><input id="s_sub_interval_hours" class="num" type="number" min="1" max="168"><span class="unit" data-i18n="uHours"></span></div>
+      <label class="fl" for="s_user_agent" data-i18n="sUA"></label>
+      <div class="fv"><input id="s_user_agent"></div>
+      <label class="fl" for="s_max_nodes" data-i18n="sMax"></label>
+      <div class="fv"><input id="s_max_nodes" class="num" type="number" min="1" max="500"></div>
+      <label class="fl" for="s_fallback_tag" data-i18n="sFallback"></label>
+      <div class="fv"><select id="s_fallback_tag"></select><small class="hint" data-i18n="hFallback"></small></div>
+      <h3 class="fh" data-i18n="setWatch"></h3>
+      <label class="fl" for="s_w_enabled" data-i18n="sWEnabled"></label>
+      <div class="fv"><input type="checkbox" id="s_w_enabled"></div>
+      <label class="fl" for="s_w_interval_sec" data-i18n="sWInterval"></label>
+      <div class="fv"><input id="s_w_interval_sec" class="num" type="number" min="15" max="3600"><span class="unit" data-i18n="uSec"></span></div>
+      <label class="fl" for="s_w_fails_to_switch" data-i18n="sWFails"></label>
+      <div class="fv"><input id="s_w_fails_to_switch" class="num" type="number" min="1" max="10"></div>
+      <label class="fl" for="s_w_background_cycle_min" data-i18n="sWBg"></label>
+      <div class="fv"><input id="s_w_background_cycle_min" class="num" type="number" min="0" max="1440"><span class="unit" data-i18n="uMin"></span><small class="hint" data-i18n="hBg"></small></div>
+      <label class="fl" for="s_w_test_kb" data-i18n="sWSize"></label>
+      <div class="fv"><input id="s_w_test_kb" class="num" type="number" min="8" max="1024"><span class="unit" data-i18n="uKB"></span><small class="hint" data-i18n="hSize"></small></div>
+      <label class="fl" for="s_w_restart_xray" data-i18n="sWRestart"></label>
+      <div class="fv"><input type="checkbox" id="s_w_restart_xray"><small class="hint" data-i18n="hRestart"></small></div>
+      <label class="fl" for="s_w_check_urls" data-i18n="sWUrls"></label>
+      <div class="fv wide"><textarea id="s_w_check_urls" style="min-height:70px"></textarea><small class="hint" data-i18n="hUrls"></small></div>
+      <h3 class="fh">Telegram</h3>
+      <label class="fl" for="s_tg_token" data-i18n="sTgToken"></label>
+      <div class="fv"><input id="s_tg_token" autocomplete="off"></div>
+      <label class="fl" for="s_tg_chat_id" data-i18n="sTgChat"></label>
+      <div class="fv"><input id="s_tg_chat_id"></div>
+      <label class="fl" for="s_tg_expire_days" data-i18n="sTgDays"></label>
+      <div class="fv"><input id="s_tg_expire_days" class="num" type="number" min="0" max="60"><span class="unit" data-i18n="uDays"></span><small class="hint" data-i18n="hTgDays"></small></div>
+      <label class="fl" for="s_tg_traffic_pct" data-i18n="sTgPct"></label>
+      <div class="fv"><input id="s_tg_traffic_pct" class="num" type="number" min="0" max="100"><span class="unit" data-i18n="uPct"></span><small class="hint" data-i18n="hTgPct"></small></div>
+      <label class="fl" for="s_tg_on_switch" data-i18n="sTgSwitch"></label>
+      <div class="fv"><input type="checkbox" id="s_tg_on_switch"></div>
+      <label class="fl" for="s_tg_on_update" data-i18n="sTgUpdate"></label>
+      <div class="fv"><input type="checkbox" id="s_tg_on_update"></div>
+      <span class="fl-empty"></span><div class="fv wide"><div class="row"><button data-i18n="sTgTest" onclick="tgTest()"></button><span id="tgmsg" class="muted"></span></div><small class="hint" data-i18n="sTgHint"></small></div>
+      <h3 class="fh" data-i18n="setAccess"></h3>
+      <label class="fl" for="s_password" data-i18n="sPass"></label>
+      <div class="fv"><input id="s_password" type="password" autocomplete="new-password"><small class="hint" data-i18n="hPass"></small></div>
+      <label class="fl" for="s_log_file" data-i18n="sLog"></label>
+      <div class="fv"><select id="s_log_file"><option value="/tmp/xsub.log" data-i18n="logTmp"></option><option value="" data-i18n="logMem"></option><option value="/opt/var/log/xsub.log" data-i18n="logDisk"></option></select></div>
+      <label class="fl" for="s_ui_allow_wan" data-i18n="sWan"></label>
+      <div class="fv"><input type="checkbox" id="s_ui_allow_wan"><small class="hint" data-i18n="hWan"></small></div>
     </div>
-    <h3 data-i18n="setWatch"></h3>
-    <div class="row">
-      <label class="check"><input type="checkbox" id="s_w_enabled"><span data-i18n="sWEnabled"></span></label>
-      <label><span data-i18n="sWInterval"></span><input id="s_w_interval_sec" type="number" min="15" max="3600"></label>
-      <label><span data-i18n="sWFails"></span><input id="s_w_fails_to_switch" type="number" min="1" max="10"></label>
-      <label><span data-i18n="sWBg"></span><input id="s_w_background_cycle_min" type="number" min="0" max="1440"></label>
-      <label><span data-i18n="sWSize"></span><input id="s_w_test_kb" type="number" min="8" max="1024"></label>
-      <label class="check"><input type="checkbox" id="s_w_restart_xray"><span data-i18n="sWRestart"></span></label>
-      <label style="flex-basis:100%"><span data-i18n="sWUrls"></span><textarea id="s_w_check_urls" style="min-height:70px"></textarea></label>
-    </div>
-    <h3>Telegram</h3>
-    <div class="row">
-      <label><span data-i18n="sTgToken"></span><input id="s_tg_token" autocomplete="off"></label>
-      <label><span>chat_id</span><input id="s_tg_chat_id"></label>
-      <label><span data-i18n="sTgDays"></span><input id="s_tg_expire_days" type="number" min="0" max="60"></label>
-      <label><span data-i18n="sTgPct"></span><input id="s_tg_traffic_pct" type="number" min="0" max="100"></label>
-      <label class="check"><input type="checkbox" id="s_tg_on_switch"><span data-i18n="sTgSwitch"></span></label>
-      <label class="check"><input type="checkbox" id="s_tg_on_update"><span data-i18n="sTgUpdate"></span></label>
-    </div>
-    <div class="row"><button data-i18n="sTgTest" onclick="tgTest()"></button><span id="tgmsg" class="muted"></span></div>
-    <p class="muted" data-i18n="sTgHint"></p>
-    <h3 data-i18n="setAccess"></h3>
-    <div class="row">
-      <label><span data-i18n="sPass"></span><input id="s_password" type="password" autocomplete="new-password"></label>
-      <label><span data-i18n="sLog"></span><select id="s_log_file"><option value="/tmp/xsub.log" data-i18n="logTmp"></option><option value="" data-i18n="logMem"></option><option value="/opt/var/log/xsub.log" data-i18n="logDisk"></option></select></label>
-      <label class="check"><input type="checkbox" id="s_ui_allow_wan"><span data-i18n="sWan"></span></label>
-    </div>
-    <div class="row" style="margin-top:10px">
+    <div class="row" style="margin-top:14px">
       <button class="primary" id="setsave" data-i18n="saveSettings" onclick="saveSettings()"></button>
       <span id="setmsg" class="muted"></span>
     </div>
@@ -243,11 +281,12 @@ ru: {
   groups:'Группы', groupsHint:'Группа отправляет свой список через свою часть узлов, например «YouTube через Нидерланды». Фильтр — регулярное выражение по имени узла. Если подходящих узлов нет, трафик группы идёт основной целью. Список группы редактируется во вкладке выше.',
   addGroup:'+ Добавить группу', saveGroups:'Сохранить группы', phGName:'Название группы', phGFilter:'Фильтр узлов, например (?i)нидерланд|NL', matched:'подходящих узлов', noGroups:'Групп нет.',
   routeTitle:'Куда пойдёт этот сайт?', routePh:'домен, ссылка или IP-адрес', routeBtn:'Проверить', rList:'Список', rRule:'Правило', rVia:'Сейчас через',
-  setMain:'Подписки и узлы', sInterval:'Обновлять подписки, часов', sUA:'User-Agent по умолчанию', sMax:'Узлов из одной подписки', sFallback:'Запасной outbound (если все узлы не работают)', none:'— нет —',
-  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки, секунд', sWFails:'Неудач подряд до переключения', sWBg:'Проверять каждый запасной узел раз в N минут (0 — выкл.)', sWSize:'Размер проверочной загрузки, КБ (известная блокировка срабатывает на 16–20 КБ — берите больше)', sWRestart:'Перезапускать XKeen, если Xray упал (не трогает, если запущен mihomo)', sWUrls:'Дополнительные адреса, которые должны открываться через узел (по одному в строке)',
-  sTgToken:'Токен бота', sTgDays:'Предупреждать за N дней до конца подписки', sTgPct:'…и при израсходовании % трафика', sTgSwitch:'Сообщать о каждом переключении узла', sTgUpdate:'Сообщать о новой версии xsub', sTgTest:'Отправить проверочное сообщение',
+  setMain:'Подписки и узлы', sInterval:'Обновлять подписки', sUA:'User-Agent по умолчанию', sMax:'Узлов из подписки', sFallback:'Запасной outbound', hFallback:'если не работает ни один узел подписок', none:'— нет —',
+  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки', sWFails:'Неудач до переключения', sWBg:'Проверка запасных узлов', hBg:'каждый узел раз в N минут; 0 — выключено', sWSize:'Размер проверки', hSize:'блокировка срабатывает на 16–20 КБ — берите больше', sWRestart:'Перезапускать XKeen', hRestart:'если Xray упал; не трогает, если запущен mihomo', sWUrls:'Сайты для проверки', hUrls:'дополнительно должны открываться через узел; по одному адресу в строке',
+  sTgToken:'Токен бота', sTgChat:'chat_id', sTgDays:'Конец подписки', hTgDays:'предупредить за столько дней', sTgPct:'Расход трафика', hTgPct:'предупредить при таком проценте', sTgSwitch:'О переключениях узла', sTgUpdate:'О новых версиях xsub', sTgTest:'Отправить проверочное сообщение',
   sTgHint:'Создайте бота у @BotFather и напишите ему что-нибудь; chat_id можно узнать у @userinfobot. Если Telegram недоступен напрямую, сообщения уходят через VPN.',
-  setAccess:'Доступ и журнал', sPass:'Новый пароль (пусто — не менять)', sLog:'Журнал', logTmp:'в оперативной памяти (/tmp)', logMem:'только на этой странице', logDisk:'на накопителе (/opt/var/log)', sWan:'Пускать на страницу не только из домашней сети',
+  setAccess:'Доступ и журнал', sPass:'Новый пароль', hPass:'пусто — не менять', sLog:'Журнал', logTmp:'в оперативной памяти (/tmp)', logMem:'только на этой странице', logDisk:'на накопителе (/opt/var/log)', sWan:'Доступ извне', hWan:'пускать на страницу не только из домашней сети',
+  uHours:'ч', uSec:'сек', uMin:'мин', uKB:'КБ', uDays:'дн.', uPct:'%',
   saveSettings:'Сохранить настройки', restarting:'Сохранено, xsub перезапускается…',
   setBackup:'Резервная копия', backupHint:'Все настройки, подписки, списки и группы одним файлом. В файле есть ссылки подписок и пароль — храните его как секрет.', backupBtn:'Скачать копию', restoreBtn:'Восстановить из файла', restoring:'Восстанавливаю…',
   setUpdate:'Обновление', updCheck:'Проверить', updBtn:'Обновить', curVer:'Установлена версия', newVer:'Доступна версия', upToDate:'Это последняя версия.', updStarted:'Обновление запущено, страница перезагрузится сама…', updConfirm:'Обновить xsub сейчас?',
@@ -272,11 +311,12 @@ en: {
   groups:'Groups', groupsHint:'A group sends its own list through its own subset of nodes, e.g. "YouTube via Netherlands". The filter is a regular expression on node names. If no nodes match, the group uses the main target. Edit the group list in the tab above.',
   addGroup:'+ Add group', saveGroups:'Save groups', phGName:'Group name', phGFilter:'Node filter, e.g. (?i)netherlands|NL', matched:'matching nodes', noGroups:'No groups.',
   routeTitle:'Where will this site go?', routePh:'domain, link or IP address', routeBtn:'Check', rList:'List', rRule:'Rule', rVia:'Currently via',
-  setMain:'Subscriptions and nodes', sInterval:'Update subscriptions every N hours', sUA:'Default User-Agent', sMax:'Nodes per subscription', sFallback:'Fallback outbound (if all nodes fail)', none:'— none —',
-  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval, seconds', sWFails:'Failures in a row before switching', sWBg:'Check every spare node once per N minutes (0 — off)', sWSize:'Check download size, KB (a common block triggers at 16–20 KB — use more)', sWRestart:'Restart XKeen if Xray crashed (skipped when mihomo runs)', sWUrls:'Extra addresses that must open through the node (one per line)',
-  sTgToken:'Bot token', sTgDays:'Warn N days before the subscription ends', sTgPct:'…and when % of traffic is used', sTgSwitch:'Notify about every node switch', sTgUpdate:'Notify about new xsub versions', sTgTest:'Send a test message',
+  setMain:'Subscriptions and nodes', sInterval:'Update subscriptions', sUA:'Default User-Agent', sMax:'Nodes per subscription', sFallback:'Fallback outbound', hFallback:'used when no subscription node works', none:'— none —',
+  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval', sWFails:'Failures before switch', sWBg:'Spare node checks', hBg:'each node once per N minutes; 0 — off', sWSize:'Check size', hSize:'a common block triggers at 16–20 KB — use more', sWRestart:'Restart XKeen', hRestart:'if Xray crashed; skipped when mihomo runs', sWUrls:'Sites to check', hUrls:'must also open through the node; one address per line',
+  sTgToken:'Bot token', sTgChat:'chat_id', sTgDays:'Subscription end', hTgDays:'warn this many days ahead', sTgPct:'Traffic used', hTgPct:'warn at this percentage', sTgSwitch:'Node switches', sTgUpdate:'New xsub versions', sTgTest:'Send a test message',
   sTgHint:'Create a bot with @BotFather and send it any message; get your chat_id from @userinfobot. If Telegram is blocked, messages go through the VPN.',
-  setAccess:'Access and log', sPass:'New password (empty — keep)', sLog:'Log', logTmp:'in RAM (/tmp)', logMem:'on this page only', logDisk:'on storage (/opt/var/log)', sWan:'Allow access from outside the home network',
+  setAccess:'Access and log', sPass:'New password', hPass:'empty — keep the current one', sLog:'Log', logTmp:'in RAM (/tmp)', logMem:'on this page only', logDisk:'on storage (/opt/var/log)', sWan:'Outside access', hWan:'allow the page from outside the home network',
+  uHours:'h', uSec:'s', uMin:'min', uKB:'KB', uDays:'days', uPct:'%',
   saveSettings:'Save settings', restarting:'Saved, xsub is restarting…',
   setBackup:'Backup', backupHint:'All settings, subscriptions, lists and groups in one file. It contains subscription links and the password — keep it secret.', backupBtn:'Download backup', restoreBtn:'Restore from file', restoring:'Restoring…',
   setUpdate:'Update', updCheck:'Check', updBtn:'Update', curVer:'Installed version', newVer:'Available version', upToDate:'This is the latest version.', updStarted:'Update started, the page will reload by itself…', updConfirm:'Update xsub now?',
