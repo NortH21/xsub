@@ -1,3 +1,12 @@
 dist/
 /xsub
 *.ipk
+
+# Рабочие файлы xsub, если положить их в корень для отладки: в них пароль
+# веб-страницы, ссылки подписок и резервных узлов, токен бота. Не коммитить.
+config.json
+settings.json
+subscriptions.json
+fallbacks.json
+groups.json
+*.log

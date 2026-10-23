@@ -100,4 +100,4 @@ jobs:
             '{chat_id: $chat, text: $text, disable_web_page_preview: true}' |
           curl -fsS -X POST -H 'Content-Type: application/json' -d @- \
             "https://api.telegram.org/bot$TOKEN/sendMessage" > /dev/null
-          echo "отправлено в $CHAT"
+          echo "сообщение отправлено"

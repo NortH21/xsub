@@ -19,7 +19,7 @@ XKeen intercepts traffic and runs Xray. xsub takes care of the contents:
 - **"Via VPN" and "Direct" lists** are edited on the web page; remote lists can be added by URL (updated daily). Everything is checked with `xray -test` on a copy of the configs before it is applied; on error nothing changes.
 - **"Where will this site go?"** — enter a domain, link or IP and see which rule matches and which node the traffic will use (including categories from `.dat` files).
 - **Self-healing.** If `05_routing.json` or `07_xsub.json` gets replaced (an XKeen update, another panel), xsub restores them. If the Xray core is gone for 3 minutes, xsub restarts XKeen (but leaves it alone if you switched to mihomo).
-- **Telegram notifications:** node switches, all nodes down and recovery, subscription or traffic running out, self-healing actions, new xsub versions. If Telegram is blocked, messages go through the VPN.
+- **Telegram notifications:** node switches, all nodes down and recovery, subscription or traffic running out, self-healing actions, new xsub versions. If Telegram is blocked, messages go through the VPN. Every message starts with the router hostname, so several devices can be told apart in one chat — rename the router if that name should not be visible there.
 - **History** of switches and a 24-hour availability strip for every node and group.
 - **Settings on the page**, a one-file backup of everything and restore from it, one-click xsub update, Russian and English interface.
 - **Geo files.** [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) (`geosite_itdog.dat`) is updated daily: `russia-inside`, `youtube`, `telegram` and other categories.
