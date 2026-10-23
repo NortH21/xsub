@@ -64,6 +64,7 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
 .form .fv textarea{width:100%;min-height:70px}
 .form .fv input[type=checkbox]{width:18px;height:18px;margin:7px 0}
 .form .unit{color:var(--muted)}
+.form .pwform{display:contents}
 .form .hint{flex-basis:100%;color:var(--muted);font-size:12px;line-height:1.35}
 @media (max-width:760px){
   .form{grid-template-columns:max-content minmax(0,1fr)}
@@ -184,7 +185,7 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <label class="fl" for="s_sub_interval_hours" data-i18n="sInterval"></label>
       <div class="fv"><input id="s_sub_interval_hours" class="num" type="number" min="1" max="168"><span class="unit" data-i18n="uHours"></span></div>
       <label class="fl" for="s_user_agent" data-i18n="sUA"></label>
-      <div class="fv"><input id="s_user_agent"></div>
+      <div class="fv"><input id="s_user_agent" name="xsub_user_agent" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other"></div>
       <label class="fl" for="s_max_nodes" data-i18n="sMax"></label>
       <div class="fv"><input id="s_max_nodes" class="num" type="number" min="1" max="500"></div>
       <label class="fl" for="s_fallback_tag" data-i18n="sFallback"></label>
@@ -206,9 +207,9 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <div class="fv wide"><textarea id="s_w_check_urls" style="min-height:70px"></textarea><small class="hint" data-i18n="hUrls"></small></div>
       <h3 class="fh">Telegram</h3>
       <label class="fl" for="s_tg_token" data-i18n="sTgToken"></label>
-      <div class="fv"><input id="s_tg_token" autocomplete="off"></div>
+      <div class="fv"><input id="s_tg_token" name="xsub_tg_token" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other"></div>
       <label class="fl" for="s_tg_chat_id" data-i18n="sTgChat"></label>
-      <div class="fv"><input id="s_tg_chat_id"></div>
+      <div class="fv"><input id="s_tg_chat_id" name="xsub_tg_chat" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other"></div>
       <label class="fl" for="s_tg_expire_days" data-i18n="sTgDays"></label>
       <div class="fv"><input id="s_tg_expire_days" class="num" type="number" min="0" max="60"><span class="unit" data-i18n="uDays"></span><small class="hint" data-i18n="hTgDays"></small></div>
       <label class="fl" for="s_tg_traffic_pct" data-i18n="sTgPct"></label>
@@ -220,7 +221,7 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <span class="fl-empty"></span><div class="fv wide"><div class="row"><button data-i18n="sTgTest" onclick="tgTest()"></button><span id="tgmsg" class="muted"></span></div><small class="hint" data-i18n="sTgHint"></small></div>
       <h3 class="fh" data-i18n="setAccess"></h3>
       <label class="fl" for="s_password" data-i18n="sPass"></label>
-      <div class="fv"><input id="s_password" type="password" autocomplete="new-password"><small class="hint" data-i18n="hPass"></small></div>
+      <div class="fv"><form class="pwform" autocomplete="off" onsubmit="return false"><input type="text" name="username" value="admin" autocomplete="username" hidden><input id="s_password" name="xsub_password" type="password" autocomplete="new-password"></form><small class="hint" data-i18n="hPass"></small></div>
       <label class="fl" for="s_log_file" data-i18n="sLog"></label>
       <div class="fv"><select id="s_log_file"><option value="/tmp/xsub.log" data-i18n="logTmp"></option><option value="" data-i18n="logMem"></option><option value="/opt/var/log/xsub.log" data-i18n="logDisk"></option></select></div>
       <label class="fl" for="s_ui_allow_wan" data-i18n="sWan"></label>
