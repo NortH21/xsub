@@ -60,6 +60,7 @@ type Watcher struct {
 	fbs       []*NodeState // резервные узлы: включаются, когда не работает ни один узел подписок
 	targets   []*Target
 	stats     map[string]*NodeStats // переживает обновление подписки
+	seeded    bool                  // список узлов уже заполнялся хотя бы раз
 	xrayStart string
 
 	notify func(key, text string) // уведомления (Telegram); может быть nil
@@ -77,10 +78,19 @@ func (w *Watcher) say(key, kind, text string) {
 }
 
 // setNodes обновляет узлы, резервы и цели, сохраняя накопленное состояние.
-// Тестовые порты: узлы с test_port_base, за ними резервы (как в generate).
 func (w *Watcher) setNodes(nodes, fbs []Node, defs []TargetDef) {
+	for _, m := range w.setNodesLocked(nodes, fbs, defs) {
+		w.say("", "info", m)
+	}
+}
+
+// setNodesLocked — сама подмена списков; возвращает сообщения об узлах, которых
+// раньше не было. Тестовые порты: узлы с test_port_base, за ними резервы (как в generate).
+func (w *Watcher) setNodesLocked(nodes, fbs []Node, defs []TargetDef) []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	now := time.Now()
+	var fresh []string
 	old := map[string]*NodeState{}
 	for _, n := range append(append([]*NodeState(nil), w.nodes...), w.fbs...) {
 		old[n.Tag] = n
@@ -94,7 +104,13 @@ func (w *Watcher) setNodes(nodes, fbs []Node, defs []TargetDef) {
 		}
 		if w.stats[n.Tag] == nil {
 			w.stats[n.Tag] = newStats()
+			if w.seeded {
+				// Тег считается по адресу, порту, SNI и транспорту: панель перенесла узел
+				// на другой хост — для сторожа это новый узел с пустой историей.
+				fresh = append(fresh, fmt.Sprintf("новый узел «%s» (%s · %s:%d) — история проверок начата заново", n.Name, n.Proto, n.Address, n.Port))
+			}
 		}
+		w.stats[n.Tag].Seen = now
 		st.Stats = w.stats[n.Tag]
 		st.TestPort = w.c.Xray.TestPortBase + i
 		if st.Fallback {
@@ -130,6 +146,22 @@ func (w *Watcher) setNodes(nodes, fbs []Node, defs []TargetDef) {
 		ts = append(ts, t)
 	}
 	w.targets = ts
+	if len(all) > 0 {
+		w.seeded = true
+	}
+	w.dropOrphans(now)
+	return fresh
+}
+
+// dropOrphans выбрасывает статистику узлов, которых нет в списке уже сутки:
+// их получасовая история к этому моменту всё равно пуста, а карта иначе растёт
+// без конца — панели меняют адреса узлов, и каждый перенос добавляет в неё тег. Под w.mu.
+func (w *Watcher) dropOrphans(now time.Time) {
+	for tag, s := range w.stats {
+		if now.Sub(s.Seen) > slotDur*slotCount {
+			delete(w.stats, tag)
+		}
+	}
 }
 
 func (w *Watcher) find(tag string) *NodeState {

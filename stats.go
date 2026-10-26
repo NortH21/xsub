@@ -27,11 +27,13 @@ type NodeStats struct {
 	LastFail time.Time `json:"last_fail"`
 	LastTest time.Time `json:"last_test"` // последняя проверка загрузкой (любая)
 	Slots    []Slot    `json:"slots"`
+
+	Seen time.Time `json:"-"` // когда узел последний раз был в списке; по нему убираются сироты
 }
 
 const unknownScore = 0.75
 
-func newStats() *NodeStats { return &NodeStats{Score: unknownScore} }
+func newStats() *NodeStats { return &NodeStats{Score: unknownScore, Seen: time.Now()} }
 
 func (s *NodeStats) record(ok bool, now time.Time) {
 	s.LastTest = now

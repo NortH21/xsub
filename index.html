@@ -22,6 +22,7 @@ select{background:var(--bg)}
 button:hover{border-color:var(--acc)}
 button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.5;cursor:wait}
+button.cur,button.cur:hover,button.cur:disabled{border-color:var(--ok);color:var(--ok);opacity:1;cursor:default}
 #updBtn:disabled{cursor:not-allowed}
 input,textarea{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;min-width:0}
 textarea{width:100%;min-height:300px;padding:10px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace}
@@ -299,7 +300,7 @@ ru: {
   fbImportTitle:'Перенести из конфигов Xray', fbImportHint:'Outbound скопируется в xsub; исходный файл XKeen не меняется — после переноса его можно удалить оттуда.', fbImported:'уже перенесён', fbLegacy:'сейчас запасной', fbImportBtn:'Перенести',
   fallback:'резерв', up:'Выше', downBtn:'Ниже', fbOnline:'работает', fbOffline:'не отвечает',
   del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
-  lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'активен', badUntil:'исключён до', select:'Выбрать', for:'для',
+  lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'Активен', badUntil:'исключён до', select:'Выбрать', for:'для',
   nodesHint:'Надёжность — доля удачных проверок загрузкой: активный узел проверяется при каждой проверке сторожа, каждый запасной — в фоне раз в N минут (задаётся в настройках). При сбое сначала выбираются надёжные узлы, потом быстрые.',
   listVPN:'Через VPN', listDirect:'Напрямую', saveApply:'Сохранить и применить', applying:'Проверяю и применяю…', applied:'Применено.', unsaved:'Есть несохранённые изменения. Переключиться без сохранения?',
   listHint:'Одна запись на строку: example.com — с поддоменами, =example.com — только он, geosite:…, ext:файл.dat:…, IP или подсеть. Строка-ссылка https://… подключает внешний список (обновляется раз в сутки). Порядок: «Напрямую», затем группы, затем «Через VPN»; остальное — напрямую.',
@@ -334,7 +335,7 @@ en: {
   fbImportTitle:'Move from Xray configs', fbImportHint:'The outbound is copied into xsub; the XKeen file is not changed — you can delete it there afterwards.', fbImported:'already moved', fbLegacy:'current fallback', fbImportBtn:'Move',
   fallback:'fallback', up:'Up', downBtn:'Down', fbOnline:'working', fbOffline:'not responding',
   del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
-  lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'active', badUntil:'excluded until', select:'Select', for:'for',
+  lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'Active', badUntil:'excluded until', select:'Select', for:'for',
   nodesHint:'Reliability is the share of successful download checks: the active node is checked on every watchdog run, each spare node in the background once per N minutes (see Settings). On failure reliable nodes are tried first, then fast ones.',
   listVPN:'Via VPN', listDirect:'Direct', saveApply:'Save and apply', applying:'Checking and applying…', applied:'Applied.', unsaved:'You have unsaved changes. Switch anyway?',
   listHint:'One entry per line: example.com — with subdomains, =example.com — exact, geosite:…, ext:file.dat:…, IP or subnet. A line with an https://… link adds a remote list (updated daily). Order: Direct, then groups, then Via VPN; everything else goes direct.',
@@ -456,13 +457,14 @@ function render() {
     const tot = (st.ok || 0) + (st.fail || 0);
     const rel = tot ? '<span class="' + (st.score >= 0.9 ? 'ok' : st.score >= 0.6 ? 'warn' : 'bad') + '">' + Math.round(st.score * 100) + '%</span> <span class="muted">(' + st.ok + '/' + tot + ')</span>' + strip(st.slots) +
       '<div class="muted">' + t('lastTest') + ': ' + ago(st.last_test) + '</div>' : '<span class="muted">·</span>';
-    let state = activeIn.map(tg => '<span class="ok">' + t('active') + (ts.length > 1 ? ' — ' + esc(tgName(tg)) : '') + '</span>').join('<br>');
-    if (bad) state += (state ? '<br>' : '') + '<span class="bad">' + t('badUntil') + ' ' + new Date(n.bad_until).toLocaleTimeString(loc()) + '</span>';
+    let state = '';
+    if (bad) state += '<span class="bad">' + t('badUntil') + ' ' + new Date(n.bad_until).toLocaleTimeString(loc()) + '</span>';
     if (n.last_err) state += '<div class="muted">' + esc(n.last_err) + '</div>';
     const choices = avail.filter(tg => tg.active !== n.tag);
-    let btn = '';
-    if (choices.length === 1) btn = '<button onclick="pick(\'' + esc(choices[0].id) + '\',\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
-    else if (choices.length > 1) btn = '<select id="sel_' + esc(n.tag) + '">' + choices.map(tg => '<option value="' + esc(tg.id) + '">' + esc(tgName(tg)) + '</option>').join('') + '</select> <button onclick="pick($(\'sel_' + esc(n.tag) + '\').value,\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
+    let btn = activeIn.map(tg => '<button class="cur" disabled>' + t('active') + (ts.length > 1 ? ' — ' + esc(tgName(tg)) : '') + '</button>').join('<br>');
+    if (btn && choices.length) btn += '<br>';
+    if (choices.length === 1) btn += '<button onclick="pick(\'' + esc(choices[0].id) + '\',\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
+    else if (choices.length > 1) btn += '<select id="sel_' + esc(n.tag) + '">' + choices.map(tg => '<option value="' + esc(tg.id) + '">' + esc(tgName(tg)) + '</option>').join('') + '</select> <button onclick="pick($(\'sel_' + esc(n.tag) + '\').value,\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
     return '<tr class="' + (activeIn.length ? 'active' : '') + '"><td>' + esc(n.name) + (n.fallback ? '<span class="badge warn">' + t('fallback') + '</span>' : '') + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
       '</td><td style="min-width:150px">' + rel + '</td><td>' + state + '</td><td style="white-space:nowrap">' + btn + '</td></tr>';
   }).join('') || '<tr><td colspan="5" class="muted">' + t('noNodes') + '</td></tr>';
