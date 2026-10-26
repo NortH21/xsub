@@ -292,3 +292,56 @@ func TestTestURL(t *testing.T) {
 		t.Fatalf("без {bytes} адрес не меняется: %s", testURL(c))
 	}
 }
+
+func TestFasterNode(t *testing.T) {
+	mk := func(tag string, ms int, ok bool, score float64) *NodeState {
+		st := newStats()
+		st.Score = score
+		if ok {
+			st.LastOK = time.Now()
+		} else {
+			st.LastFail = time.Now()
+		}
+		return &NodeState{Node: Node{Tag: tag, Name: tag}, LatencyMs: ms, Stats: st}
+	}
+	c := defaultConfig()
+	c.Watch.SwitchFasterMs = 200
+	w := newWatcher(c)
+	w.nodes = []*NodeState{
+		mk("cur", 800, true, 0.95),
+		mk("fast", 500, true, 0.95),  // быстрее на 300 — подходит
+		mk("near", 700, true, 0.95),  // быстрее всего на 100 — мало
+		mk("flaky", 100, true, 0.30), // быстрый, но ненадёжный
+		mk("dead", 50, false, 0.95),  // последняя проверка загрузкой не прошла
+		mk("cold", 60, true, 0.95),   // быстрее всех — проверим исключения на нём
+	}
+	w.nodes[5].BadUntil = time.Now().Add(time.Minute) // «залип» — не берём
+	tg := &Target{Active: "cur"}
+	if n := w.faster(tg); n == nil || n.Tag != "fast" {
+		t.Fatalf("ожидался fast: %v", n)
+	}
+	tg.Pinned = true
+	if n := w.faster(tg); n != nil {
+		t.Fatalf("вручную выбранный узел не меняем: %s", n.Tag)
+	}
+	tg.Pinned = false
+	w.nodes[0].LatencyMs = -1
+	if n := w.faster(tg); n != nil {
+		t.Fatalf("без задержки текущего сравнивать не с чем: %s", n.Tag)
+	}
+	w.nodes[0].LatencyMs = 800
+	c.Watch.SwitchFasterMs = 0
+	if n := w.faster(tg); n != nil {
+		t.Fatalf("при 0 переход выключен: %s", n.Tag)
+	}
+	c.Watch.SwitchFasterMs = 200
+	tg.Active = fbPrefix + "abc"
+	if n := w.faster(tg); n != nil {
+		t.Fatalf("с резерва уходим только по возврату: %s", n.Tag)
+	}
+	tg.Active = "cur"
+	tg.tags = map[string]bool{"cur": true, "near": true}
+	if n := w.faster(tg); n != nil {
+		t.Fatalf("узлы не из группы не годятся: %s", n.Tag)
+	}
+}

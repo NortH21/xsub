@@ -78,6 +78,10 @@ type WatchConfig struct {
 	// Каждый запасной узел проверяется загрузкой раз в столько минут (0 — не проверять).
 	// Проверки равномерно распределяются по времени.
 	BackgroundCycleMin int `json:"background_cycle_min"`
+	// Перейти на запасной узел, если он прошёл проверку, надёжен не хуже текущего
+	// и быстрее его на столько миллисекунд (0 — не переходить ради скорости).
+	// Работает только вместе с фоновой проверкой: задержки берутся оттуда.
+	SwitchFasterMs int `json:"switch_faster_ms"`
 	// Запускать XKeen заново, если ядро Xray пропало (и не запущен mihomo).
 	RestartXray bool `json:"restart_xray"`
 }
@@ -137,6 +141,7 @@ func defaultConfig() *Config {
 			LatencyURL:         "https://www.gstatic.com/generate_204",
 			DirectURLs:         []string{"https://ya.ru", "https://www.google.com", "https://1.1.1.1"},
 			BackgroundCycleMin: 30,
+			SwitchFasterMs:     200,
 			RestartXray:        true,
 		},
 		Telegram:   TelegramConfig{ExpireDays: 3, TrafficPct: 90, OnSwitch: true, OnUpdate: true},
@@ -195,6 +200,9 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Watch.MaxTry < 1 {
 		c.Watch.MaxTry = 20
+	}
+	if c.Watch.SwitchFasterMs < 0 {
+		c.Watch.SwitchFasterMs = 0
 	}
 	if c.Xray.Balancer == "" {
 		c.Xray.Balancer = "xsub"

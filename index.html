@@ -212,6 +212,8 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
       <div class="fv"><input id="s_w_interval_sec" class="num" type="number" min="15" max="3600"><span class="unit" data-i18n="uSec"></span></div>
       <label class="fl" for="s_w_fails_to_switch" data-i18n="sWFails"></label>
       <div class="fv"><input id="s_w_fails_to_switch" class="num" type="number" min="1" max="10"></div>
+      <label class="fl" for="s_w_switch_faster_ms" data-i18n="sWFaster"></label>
+      <div class="fv"><input id="s_w_switch_faster_ms" class="num" type="number" min="0" max="10000"><span class="unit" data-i18n="uMs"></span><small class="hint" data-i18n="hFaster"></small></div>
       <label class="fl" for="s_w_background_cycle_min" data-i18n="sWBg"></label>
       <div class="fv"><input id="s_w_background_cycle_min" class="num" type="number" min="0" max="1440"><span class="unit" data-i18n="uMin"></span><small class="hint" data-i18n="hBg"></small></div>
       <label class="fl" for="s_w_test_kb" data-i18n="sWSize"></label>
@@ -301,18 +303,18 @@ ru: {
   fallback:'резерв', up:'Выше', downBtn:'Ниже', fbOnline:'работает', fbOffline:'не отвечает',
   del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
   lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'Активен', badUntil:'исключён до', select:'Выбрать', for:'для',
-  nodesHint:'Надёжность — доля удачных проверок загрузкой: активный узел проверяется при каждой проверке сторожа, каждый запасной — в фоне раз в N минут (задаётся в настройках). При сбое сначала выбираются надёжные узлы, потом быстрые.',
+  nodesHint:'Надёжность — доля удачных проверок загрузкой: активный узел проверяется при каждой проверке сторожа, каждый запасной — в фоне раз в N минут (задаётся в настройках). Задержка обновляется при каждой такой проверке. При сбое сначала выбираются надёжные узлы, потом быстрые.',
   listVPN:'Через VPN', listDirect:'Напрямую', saveApply:'Сохранить и применить', applying:'Проверяю и применяю…', applied:'Применено.', unsaved:'Есть несохранённые изменения. Переключиться без сохранения?',
   listHint:'Одна запись на строку: example.com — с поддоменами, =example.com — только он, geosite:…, ext:файл.dat:…, IP или подсеть. Строка-ссылка https://… подключает внешний список (обновляется раз в сутки). Порядок: «Напрямую», затем группы, затем «Через VPN»; остальное — напрямую.',
   groups:'Группы', groupsHint:'Группа отправляет свой список через свою часть узлов, например «YouTube через Нидерланды». Фильтр — регулярное выражение по имени узла. Если подходящих узлов нет, трафик группы идёт основной целью. Список группы редактируется во вкладке выше.',
   addGroup:'+ Добавить группу', saveGroups:'Сохранить группы', phGName:'Название группы', phGFilter:'Фильтр узлов, например (?i)нидерланд|NL', matched:'подходящих узлов', noGroups:'Групп нет.',
   routeTitle:'Куда пойдёт этот сайт?', routePh:'домен, ссылка или IP-адрес', routeBtn:'Проверить', rList:'Список', rRule:'Правило', rVia:'Сейчас через',
   setMain:'Подписки и узлы', sInterval:'Обновлять подписки', sUA:'User-Agent по умолчанию', sMax:'Узлов из подписки', none:'— нет —',
-  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки', sWFails:'Неудач до переключения', sWBg:'Проверка запасных узлов', hBg:'каждый узел раз в N минут; 0 — выключено', sWSize:'Размер проверки', hSize:'блокировка срабатывает на 16–20 КБ — берите больше', sWRestart:'Перезапускать XKeen', hRestart:'если Xray упал; не трогает, если запущен mihomo', sWUrls:'Сайты для проверки', hUrls:'дополнительно должны открываться через узел; по одному адресу в строке',
+  setWatch:'Сторож', sWEnabled:'Проверять узлы', sWInterval:'Интервал проверки', sWFails:'Неудач до переключения', sWFaster:'Переходить на быстрый узел', hFaster:'если запасной надёжен не хуже текущего и быстрее его на столько миллисекунд; 0 — не переходить. Нужна фоновая проверка — задержки берутся из неё', sWBg:'Проверка запасных узлов', hBg:'каждый узел раз в N минут; 0 — выключено', sWSize:'Размер проверки', hSize:'блокировка срабатывает на 16–20 КБ — берите больше', sWRestart:'Перезапускать XKeen', hRestart:'если Xray упал; не трогает, если запущен mihomo', sWUrls:'Сайты для проверки', hUrls:'дополнительно должны открываться через узел; по одному адресу в строке',
   sTgToken:'Токен бота', sTgChat:'chat_id', sTgDays:'Конец подписки', hTgDays:'предупредить за столько дней', sTgPct:'Расход трафика', hTgPct:'предупредить при таком проценте', sTgSwitch:'О переключениях узла', sTgUpdate:'О новых версиях xsub', sTgTest:'Отправить проверочное сообщение',
   sTgHint:'Создайте бота у @BotFather и напишите ему что-нибудь; chat_id можно узнать у @userinfobot. Если Telegram недоступен напрямую, сообщения уходят через VPN.',
   setAccess:'Доступ и журнал', sPass:'Новый пароль', hPass:'пусто — не менять', sLog:'Журнал', logTmp:'в оперативной памяти (/tmp)', logMem:'только на этой странице', logDisk:'на накопителе (/opt/var/log)', sWan:'Доступ извне', hWan:'пускать на страницу не только из домашней сети',
-  uHours:'ч', uSec:'сек', uMin:'мин', uKB:'КБ', uDays:'дн.', uPct:'%',
+  uHours:'ч', uSec:'сек', uMs:'мс', uMin:'мин', uKB:'КБ', uDays:'дн.', uPct:'%',
   saveSettings:'Сохранить настройки', restarting:'Сохранено, xsub перезапускается…',
   setBackup:'Резервная копия', backupHint:'Все настройки, подписки, списки и группы одним файлом. В файле есть ссылки подписок и пароль — храните его как секрет.', backupBtn:'Скачать копию', restoreBtn:'Восстановить из файла', restoring:'Восстанавливаю…',
   diagFix:'Нужно поправить', diagTitle:'Окружение', diagHint:'После установки XKeen (ядро Xray) и xsub вручную в конфигах Xray ничего править не нужно. Здесь видно, всё ли на месте.', diagRecheck:'Проверить снова', diagCmd:'Как исправить',
@@ -336,18 +338,18 @@ en: {
   fallback:'fallback', up:'Up', downBtn:'Down', fbOnline:'working', fbOffline:'not responding',
   del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
   lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'Active', badUntil:'excluded until', select:'Select', for:'for',
-  nodesHint:'Reliability is the share of successful download checks: the active node is checked on every watchdog run, each spare node in the background once per N minutes (see Settings). On failure reliable nodes are tried first, then fast ones.',
+  nodesHint:'Reliability is the share of successful download checks: the active node is checked on every watchdog run, each spare node in the background once per N minutes (see Settings). Latency is refreshed on every such check. On failure reliable nodes are tried first, then fast ones.',
   listVPN:'Via VPN', listDirect:'Direct', saveApply:'Save and apply', applying:'Checking and applying…', applied:'Applied.', unsaved:'You have unsaved changes. Switch anyway?',
   listHint:'One entry per line: example.com — with subdomains, =example.com — exact, geosite:…, ext:file.dat:…, IP or subnet. A line with an https://… link adds a remote list (updated daily). Order: Direct, then groups, then Via VPN; everything else goes direct.',
   groups:'Groups', groupsHint:'A group sends its own list through its own subset of nodes, e.g. "YouTube via Netherlands". The filter is a regular expression on node names. If no nodes match, the group uses the main target. Edit the group list in the tab above.',
   addGroup:'+ Add group', saveGroups:'Save groups', phGName:'Group name', phGFilter:'Node filter, e.g. (?i)netherlands|NL', matched:'matching nodes', noGroups:'No groups.',
   routeTitle:'Where will this site go?', routePh:'domain, link or IP address', routeBtn:'Check', rList:'List', rRule:'Rule', rVia:'Currently via',
   setMain:'Subscriptions and nodes', sInterval:'Update subscriptions', sUA:'Default User-Agent', sMax:'Nodes per subscription', none:'— none —',
-  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval', sWFails:'Failures before switch', sWBg:'Spare node checks', hBg:'each node once per N minutes; 0 — off', sWSize:'Check size', hSize:'a common block triggers at 16–20 KB — use more', sWRestart:'Restart XKeen', hRestart:'if Xray crashed; skipped when mihomo runs', sWUrls:'Sites to check', hUrls:'must also open through the node; one address per line',
+  setWatch:'Watchdog', sWEnabled:'Check nodes', sWInterval:'Check interval', sWFails:'Failures before switch', sWFaster:'Switch to a faster node', hFaster:'when a spare is at least as reliable as the current one and this many milliseconds faster; 0 — off. Needs background checks: latencies come from them', sWBg:'Spare node checks', hBg:'each node once per N minutes; 0 — off', sWSize:'Check size', hSize:'a common block triggers at 16–20 KB — use more', sWRestart:'Restart XKeen', hRestart:'if Xray crashed; skipped when mihomo runs', sWUrls:'Sites to check', hUrls:'must also open through the node; one address per line',
   sTgToken:'Bot token', sTgChat:'chat_id', sTgDays:'Subscription end', hTgDays:'warn this many days ahead', sTgPct:'Traffic used', hTgPct:'warn at this percentage', sTgSwitch:'Node switches', sTgUpdate:'New xsub versions', sTgTest:'Send a test message',
   sTgHint:'Create a bot with @BotFather and send it any message; get your chat_id from @userinfobot. If Telegram is blocked, messages go through the VPN.',
   setAccess:'Access and log', sPass:'New password', hPass:'empty — keep the current one', sLog:'Log', logTmp:'in RAM (/tmp)', logMem:'on this page only', logDisk:'on storage (/opt/var/log)', sWan:'Outside access', hWan:'allow the page from outside the home network',
-  uHours:'h', uSec:'s', uMin:'min', uKB:'KB', uDays:'days', uPct:'%',
+  uHours:'h', uSec:'s', uMs:'ms', uMin:'min', uKB:'KB', uDays:'days', uPct:'%',
   saveSettings:'Save settings', restarting:'Saved, xsub is restarting…',
   setBackup:'Backup', backupHint:'All settings, subscriptions, lists and groups in one file. It contains subscription links and the password — keep it secret.', backupBtn:'Download backup', restoreBtn:'Restore from file', restoring:'Restoring…',
   diagFix:'Needs attention', diagTitle:'Environment', diagHint:'After installing XKeen (Xray core) and xsub, nothing has to be edited in the Xray configs by hand. This shows whether everything is in place.', diagRecheck:'Check again', diagCmd:'How to fix',
@@ -679,7 +681,7 @@ async function loadSettings() {
   const s = SET.settings, w = s.watchdog, tg = s.telegram;
   const v = (id, x) => $(id).value = x ?? '', c = (id, x) => $(id).checked = !!x;
   v('s_sub_interval_hours', s.sub_interval_hours); v('s_user_agent', s.user_agent); v('s_max_nodes', s.max_nodes);
-  c('s_w_enabled', w.enabled); v('s_w_interval_sec', w.interval_sec); v('s_w_fails_to_switch', w.fails_to_switch);
+  c('s_w_enabled', w.enabled); v('s_w_interval_sec', w.interval_sec); v('s_w_fails_to_switch', w.fails_to_switch); v('s_w_switch_faster_ms', w.switch_faster_ms);
   v('s_w_background_cycle_min', w.background_cycle_min); v('s_w_test_kb', Math.round((w.test_bytes || 32768) / 1024)); c('s_w_restart_xray', w.restart_xray); v('s_w_check_urls', (w.check_urls || []).join('\n'));
   v('s_tg_token', tg.token); v('s_tg_chat_id', tg.chat_id); v('s_tg_expire_days', tg.expire_days); v('s_tg_traffic_pct', tg.traffic_pct);
   c('s_tg_on_switch', tg.on_switch); c('s_tg_on_update', tg.on_update);
@@ -699,7 +701,7 @@ function collectSettings() {
   return {
     password: v('s_password'), sub_interval_hours: n('s_sub_interval_hours'), user_agent: v('s_user_agent'), max_nodes: n('s_max_nodes'),
     log_file: v('s_log_file'), ui_allow_wan: c('s_ui_allow_wan'),
-    watchdog: {enabled: c('s_w_enabled'), interval_sec: n('s_w_interval_sec'), fails_to_switch: n('s_w_fails_to_switch'),
+    watchdog: {enabled: c('s_w_enabled'), interval_sec: n('s_w_interval_sec'), fails_to_switch: n('s_w_fails_to_switch'), switch_faster_ms: n('s_w_switch_faster_ms'),
       background_cycle_min: n('s_w_background_cycle_min'), test_bytes: n('s_w_test_kb') * 1024, restart_xray: c('s_w_restart_xray'),
       check_urls: v('s_w_check_urls').split('\n').map(x => x.trim()).filter(Boolean)},
     telegram: {token: v('s_tg_token'), chat_id: v('s_tg_chat_id'), expire_days: n('s_tg_expire_days'), traffic_pct: n('s_tg_traffic_pct'),

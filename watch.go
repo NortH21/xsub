@@ -178,6 +178,12 @@ func (w *Watcher) find(tag string) *NodeState {
 	return nil
 }
 
+func (w *Watcher) node(tag string) *NodeState {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.find(tag)
+}
+
 func (w *Watcher) target(id string) *Target {
 	for _, t := range w.targets {
 		if t.ID == id {
@@ -258,7 +264,7 @@ func hostOf(u string) string {
 }
 
 func (w *Watcher) latency(port int) (int, error) {
-	cl := socksClient(port, 5*time.Second)
+	cl := socksClient(port, time.Duration(w.c.Watch.TimeoutSec)*time.Second)
 	start := time.Now()
 	resp, err := cl.Get(w.c.Watch.LatencyURL)
 	if err != nil {
@@ -280,6 +286,15 @@ func (w *Watcher) internetOK() bool {
 		}
 	}
 	return false
+}
+
+// measure обновляет задержку узла. Текст ошибки не трогает: он остаётся от проверки
+// загрузкой, которая и решает, рабочий узел или нет.
+func (w *Watcher) measure(n *NodeState) {
+	ms, _ := w.latency(n.TestPort)
+	w.mu.Lock()
+	n.LatencyMs, n.CheckedAt = ms, time.Now()
+	w.mu.Unlock()
 }
 
 // checkAll меряет задержку всех узлов параллельно (по 4 сразу).
@@ -432,6 +447,82 @@ func (w *Watcher) tryFallbacks(t *Target, prev, reason string, tried int) bool {
 	return false
 }
 
+// faster ищет узел, ради скорости которого стоит переключиться: проверка загрузкой
+// на нём прошла, надёжность не хуже текущего, а задержка меньше на switch_faster_ms
+// и больше. Резервы не рассматриваются — они только на случай, когда не работает
+// ничего. Под w.mu.
+func (w *Watcher) faster(t *Target) *NodeState {
+	gain := w.c.Watch.SwitchFasterMs
+	if gain <= 0 || t.Pinned || t.Active == "" || isFallbackTag(t.Active) {
+		return nil
+	}
+	cur := w.find(t.Active)
+	if cur == nil || cur.LatencyMs <= 0 {
+		return nil
+	}
+	now, best := time.Now(), cur
+	for _, n := range w.nodes {
+		if n.Tag == cur.Tag || !t.has(n.Tag) || n.LatencyMs <= 0 || now.Before(n.BadUntil) {
+			continue
+		}
+		// Последняя проверка загрузкой должна быть удачной, иначе узел «быстрый», но нерабочий.
+		if !n.Stats.LastOK.After(n.Stats.LastFail) || n.Stats.tier() > cur.Stats.tier() {
+			continue
+		}
+		if cur.LatencyMs-n.LatencyMs >= gain && n.LatencyMs < best.LatencyMs {
+			best = n
+		}
+	}
+	if best == cur {
+		return nil
+	}
+	return best
+}
+
+// switchFaster переводит цели на заметно более быстрые узлы. Под opMu.
+// Чаще раза за цикл фоновых проверок не переключает: решение принимается по задержкам,
+// которые туда и записываются, и за цикл каждый запасной успевает обновить свою.
+func (w *Watcher) switchFaster() {
+	cycle := time.Duration(w.c.Watch.BackgroundCycleMin) * time.Minute
+	if cycle <= 0 || w.c.Watch.SwitchFasterMs <= 0 {
+		return
+	}
+	for _, t := range w.allTargets() {
+		w.mu.Lock()
+		var cand *NodeState
+		from, fromMs, toMs := "", 0, 0
+		if time.Since(t.lastSelect) >= cycle {
+			if cand = w.faster(t); cand != nil {
+				cur := w.find(t.Active)
+				from, fromMs, toMs = cur.Name, cur.LatencyMs, cand.LatencyMs
+			}
+		}
+		w.mu.Unlock()
+		if cand == nil {
+			continue
+		}
+		// Задержка у кандидата могла устареть на цикл — проверяем его прямо сейчас.
+		if err := w.realTest(cand.TestPort); err != nil {
+			w.record(cand.Tag, false)
+			w.mu.Lock()
+			cand.LastErr = "загрузка: " + shortErr(err)
+			w.mu.Unlock()
+			continue
+		}
+		w.record(cand.Tag, true)
+		if err := w.override(t.Balancer, cand.Tag); err != nil {
+			lg.Printf("не удалось переключить балансировщик %s: %v", t.Balancer, err)
+			continue
+		}
+		now := time.Now()
+		w.mu.Lock()
+		t.Active, t.Pinned, t.Fails, t.LastOK, t.Down, t.lastSelect = cand.Tag, false, 0, now, false, now
+		cand.BadUntil, cand.LastErr = time.Time{}, ""
+		w.mu.Unlock()
+		w.say("switch"+t.ID, "switch", fmt.Sprintf("узел быстрее%s: переключено на «%s» (%d мс вместо %d у «%s»)", t.where(), cand.Name, toMs, fromMs, from))
+	}
+}
+
 // override закрепляет балансировщик за узлом (tag="" — снять закрепление).
 func (w *Watcher) override(balancer, tag string) error {
 	args := []string{"api", "bo", "-s", w.c.Xray.APIListen, "-b", balancer}
@@ -572,6 +663,7 @@ func (w *Watcher) tick() {
 		w.checkTarget(t)
 	}
 	w.background()
+	w.switchFaster()
 }
 
 const fallbackRetry = 10 * time.Minute
@@ -605,6 +697,11 @@ func (w *Watcher) checkTarget(t *Target) {
 		}
 	}
 	w.record(active, err == nil)
+	if err == nil {
+		if n := w.node(active); n != nil {
+			w.measure(n)
+		}
+	}
 	w.mu.Lock()
 	addSlot(&t.Slots, err == nil, time.Now())
 	if err == nil {
@@ -652,8 +749,12 @@ func (w *Watcher) background() {
 	for _, n := range due {
 		err := w.realTest(n.TestPort)
 		w.record(n.Tag, err == nil)
+		if err == nil {
+			w.measure(n)
+		}
 		w.mu.Lock()
 		if err != nil {
+			n.LatencyMs, n.CheckedAt = -1, time.Now()
 			n.LastErr = "фоновая проверка: " + shortErr(err)
 		} else if strings.HasPrefix(n.LastErr, "фоновая проверка") || strings.HasPrefix(n.LastErr, "загрузка") {
 			n.LastErr = ""

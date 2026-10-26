@@ -30,6 +30,7 @@ type UISettings struct {
 		IntervalSec        int      `json:"interval_sec"`
 		FailsToSwitch      int      `json:"fails_to_switch"`
 		BackgroundCycleMin int      `json:"background_cycle_min"`
+		SwitchFasterMs     int      `json:"switch_faster_ms"`
 		TestBytes          int64    `json:"test_bytes"`
 		CheckURLs          []string `json:"check_urls"`
 		RestartXray        bool     `json:"restart_xray"`
@@ -47,7 +48,7 @@ func (a *App) uiSettings() map[string]any {
 	s.Xray.FallbackTag = c.Xray.FallbackTag
 	s.Watch.Enabled, s.Watch.IntervalSec, s.Watch.FailsToSwitch = c.Watch.Enabled, c.Watch.IntervalSec, c.Watch.FailsToSwitch
 	s.Watch.BackgroundCycleMin, s.Watch.CheckURLs, s.Watch.RestartXray = c.Watch.BackgroundCycleMin, c.Watch.CheckURLs, c.Watch.RestartXray
-	s.Watch.TestBytes = c.Watch.TestBytes
+	s.Watch.TestBytes, s.Watch.SwitchFasterMs = c.Watch.TestBytes, c.Watch.SwitchFasterMs
 	s.Telegram = c.Telegram
 	if s.Telegram.Token != "" {
 		s.Telegram.Token = secretMask
@@ -102,6 +103,9 @@ func (a *App) validateSettings(s *UISettings) error {
 	}
 	if s.Watch.TestBytes < 8<<10 || s.Watch.TestBytes > 1<<20 {
 		return fmt.Errorf("размер проверочной загрузки — от 8 до 1024 КБ")
+	}
+	if s.Watch.SwitchFasterMs != 0 && (s.Watch.SwitchFasterMs < 50 || s.Watch.SwitchFasterMs > 10000) {
+		return fmt.Errorf("переход на быстрый узел — 0 (выключено) или от 50 до 10000 мс")
 	}
 	if s.MaxNodes < 1 || s.MaxNodes > 500 {
 		return fmt.Errorf("узлов из подписки — от 1 до 500")
