@@ -565,6 +565,7 @@ func (w *Watcher) pin(targetID, tag string) error {
 	}
 	w.mu.Lock()
 	t.Active, t.Pinned, t.Fails, t.Down = tag, true, 0, false
+	n.BadUntil, n.LastErr = time.Time{}, ""
 	w.mu.Unlock()
 	w.say("", "info", fmt.Sprintf("вручную выбран «%s»%s", n.Name, t.where()))
 	return nil
