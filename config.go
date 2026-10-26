@@ -82,6 +82,9 @@ type WatchConfig struct {
 	// и быстрее его на столько миллисекунд (0 — не переходить ради скорости).
 	// Работает только вместе с фоновой проверкой: задержки берутся оттуда.
 	SwitchFasterMs int `json:"switch_faster_ms"`
+	// Пауза после обнаружения запущенного Xray, прежде чем закрепить узлы (секунды).
+	// Даёт Xray время поднять все inbound'ы после перезапуска.
+	RestartDelaySec int `json:"restart_delay_sec"`
 	// Запускать XKeen заново, если ядро Xray пропало (и не запущен mihomo).
 	RestartXray bool `json:"restart_xray"`
 }
@@ -142,6 +145,7 @@ func defaultConfig() *Config {
 			DirectURLs:         []string{"https://ya.ru", "https://www.google.com", "https://1.1.1.1"},
 			BackgroundCycleMin: 30,
 			SwitchFasterMs:     200,
+			RestartDelaySec:    7,
 			RestartXray:        true,
 		},
 		Telegram:   TelegramConfig{ExpireDays: 3, TrafficPct: 90, OnSwitch: true, OnUpdate: true},
@@ -203,6 +207,9 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if c.Watch.SwitchFasterMs < 0 {
 		c.Watch.SwitchFasterMs = 0
+	}
+	if c.Watch.RestartDelaySec < 1 {
+		c.Watch.RestartDelaySec = 7
 	}
 	if c.Xray.Balancer == "" {
 		c.Xray.Balancer = "xsub"

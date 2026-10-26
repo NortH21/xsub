@@ -100,7 +100,7 @@ func (a *App) afterRestart(reason string) {
 	for i := 0; i < 20 && xrayStartTime(a.c) == ""; i++ {
 		time.Sleep(time.Second)
 	}
-	time.Sleep(3 * time.Second)
+	time.Sleep(time.Duration(a.c.Watch.RestartDelaySec) * time.Second)
 	a.w.repin(reason)
 }
 
