@@ -501,15 +501,22 @@ func (w *Watcher) switchFaster() {
 		if cand == nil {
 			continue
 		}
-		// Задержка у кандидата могла устареть на цикл — проверяем его прямо сейчас.
-		if err := w.realTest(cand.TestPort); err != nil {
-			w.record(cand.Tag, false)
-			w.mu.Lock()
-			cand.LastErr = "загрузка: " + shortErr(err)
-			w.mu.Unlock()
+		// Задержка у кандидата могла устареть на цикл — проверяем его дважды прямо сейчас.
+		allOK := true
+		for range 2 {
+			if err := w.realTest(cand.TestPort); err != nil {
+				allOK = false
+				w.record(cand.Tag, false)
+				w.mu.Lock()
+				cand.LastErr = "загрузка: " + shortErr(err)
+				w.mu.Unlock()
+				break
+			}
+			w.record(cand.Tag, true)
+		}
+		if !allOK {
 			continue
 		}
-		w.record(cand.Tag, true)
 		if err := w.override(t.Balancer, cand.Tag); err != nil {
 			lg.Printf("не удалось переключить балансировщик %s: %v", t.Balancer, err)
 			continue
