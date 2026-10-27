@@ -31,16 +31,17 @@ func (w *Watcher) realTest(port int) error {
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, w.c.Watch.TestBytes))
-	resp.Body.Close()
 	if resp.StatusCode != 200 {
+		resp.Body.Close()
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+	n, copyErr := io.Copy(io.Discard, io.LimitReader(resp.Body, w.c.Watch.TestBytes))
+	resp.Body.Close()
 	if n < w.c.Watch.TestBytes {
-		if err == nil {
-			err = fmt.Errorf("получено %d из %d байт", n, w.c.Watch.TestBytes)
+		if copyErr == nil {
+			copyErr = fmt.Errorf("получено %d из %d байт", n, w.c.Watch.TestBytes)
 		}
-		return fmt.Errorf("обрыв на %d байтах: %v", n, err)
+		return fmt.Errorf("обрыв на %d байтах: %v", n, copyErr)
 	}
 	for _, u := range w.c.Watch.CheckURLs {
 		resp, err := cl.Get(u)
@@ -163,16 +164,12 @@ var procStamps = struct {
 
 func procStamp(name string) string {
 	procStamps.mu.Lock()
+	defer procStamps.mu.Unlock()
 	if t, ok := procStamps.at[name]; ok && time.Since(t) < procStampTTL {
-		v := procStamps.val[name]
-		procStamps.mu.Unlock()
-		return v
+		return procStamps.val[name]
 	}
-	procStamps.mu.Unlock()
 	v := scanProcStamp(name)
-	procStamps.mu.Lock()
 	procStamps.val[name], procStamps.at[name] = v, time.Now()
-	procStamps.mu.Unlock()
 	return v
 }
 

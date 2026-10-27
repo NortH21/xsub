@@ -107,7 +107,7 @@ func (w *Watcher) tryFallbacks(t *Target, prev, reason string, tried int) bool {
 		}
 		if err := w.override(t.Balancer, n.Tag); err != nil {
 			lg.Printf("не удалось переключить балансировщик %s: %v", t.Balancer, err)
-			return true
+			continue
 		}
 		w.mu.Lock()
 		t.Active, t.Pinned, t.Fails, t.LastOK, t.Down = n.Tag, false, 0, time.Now(), false
@@ -143,8 +143,8 @@ func (w *Watcher) faster(t *Target) *NodeState {
 		if n.Tag == cur.Tag || !t.has(n.Tag) || n.LatencyMs <= 0 || now.Before(n.BadUntil) {
 			continue
 		}
-		// Последняя проверка загрузкой должна быть удачной, иначе узел «быстрый», но нерабочий.
-		if !n.Stats.LastOK.After(n.Stats.LastFail) || n.Stats.tier() > cur.Stats.tier() {
+		// Последняя проверка загрузкой удачна; для нового узла (LastFail нулевой) тоже подходит.
+		if !(n.Stats.LastFail.IsZero() || n.Stats.LastOK.After(n.Stats.LastFail)) || n.Stats.tier() > cur.Stats.tier() {
 			continue
 		}
 		if cur.LatencyMs-n.LatencyMs >= gain && n.LatencyMs < best.LatencyMs {
@@ -222,8 +222,9 @@ func (w *Watcher) override(balancer, tag string) error {
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(tail(out, 2)))
 	}
+	start := xrayStartTime(w.c)
 	w.mu.Lock()
-	w.xrayStart = xrayStartTime(w.c)
+	w.xrayStart = start
 	w.mu.Unlock()
 	return nil
 }
@@ -275,8 +276,11 @@ func (w *Watcher) repin(reason string) {
 		w.mu.Lock()
 		active := t.Active
 		w.mu.Unlock()
-		if active != "" && w.override(t.Balancer, active) == nil && w.realTest(t.ProbePort) == nil {
-			continue
+		if active != "" && w.override(t.Balancer, active) == nil {
+			time.Sleep(2 * time.Second)
+			if w.realTest(t.ProbePort) == nil {
+				continue
+			}
 		}
 		w.selectNode(t, reason)
 	}

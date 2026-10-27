@@ -36,7 +36,8 @@ func (w *Watcher) tick() {
 	w.mu.Lock()
 	restarted := st != w.xrayStart
 	w.mu.Unlock()
-	if len(w.allTargets()) == 0 {
+	targets := w.allTargets()
+	if len(targets) == 0 {
 		return
 	}
 	if restarted {
@@ -44,7 +45,7 @@ func (w *Watcher) tick() {
 		lg.Printf("Xray перезапущен — закрепляю выбранные узлы снова")
 		w.repin("после перезапуска Xray")
 	}
-	for _, t := range w.allTargets() {
+	for _, t := range targets {
 		w.checkTarget(t)
 	}
 	w.background()

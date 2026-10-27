@@ -40,6 +40,8 @@ type UISettings struct {
 
 const secretMask = "••••••"
 
+var telegramTokenRe = regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]{20,}$`)
+
 // uiSettings — текущие значения для страницы (пароль не отдаётся, токен скрыт).
 func (a *App) uiSettings() map[string]any {
 	c := a.c
@@ -87,7 +89,7 @@ func (a *App) validateSettings(s *UISettings) error {
 	}
 	s.Telegram.Token = strings.TrimSpace(s.Telegram.Token)
 	s.Telegram.ChatID = strings.TrimSpace(s.Telegram.ChatID)
-	if s.Telegram.Token != "" && !regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]{20,}$`).MatchString(s.Telegram.Token) {
+	if s.Telegram.Token != "" && !telegramTokenRe.MatchString(s.Telegram.Token) {
 		return fmt.Errorf("токен бота выглядит неправильно (формат 123456:ABC…)")
 	}
 	if s.SubIntervalHours < 1 || s.SubIntervalHours > 168 {
