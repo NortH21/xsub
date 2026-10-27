@@ -68,6 +68,7 @@ func (a *App) saveSettings(s UISettings) error {
 		return err
 	}
 	lg.Printf("настройки сохранены — перезапускаю xsub")
+	a.w.saveStats()
 	restartSelf()
 	return nil
 }
@@ -173,6 +174,7 @@ func (a *App) restore(bk Backup) error {
 		return err
 	}
 	lg.Printf("настройки восстановлены из копии от %s — перезапускаю xsub", bk.Created.Format("02.01.2006 15:04"))
+	a.w.saveStats()
 	restartSelf()
 	return nil
 }

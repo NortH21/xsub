@@ -85,6 +85,10 @@ type WatchConfig struct {
 	// и быстрее его на столько миллисекунд (0 — не переходить ради скорости).
 	// Работает только вместе с фоновой проверкой: задержки берутся оттуда.
 	SwitchFasterMs int `json:"switch_faster_ms"`
+	// Куда класть историю проверок, чтобы она пережила перезапуск xsub. По умолчанию
+	// в /tmp — это оперативная память роутера: флеш не изнашивается, но сохранение
+	// настроек и самообновление больше не обнуляют статистику ("" — не сохранять).
+	StatsFile string `json:"stats_file"`
 	// Пауза после обнаружения запущенного Xray, прежде чем закрепить узлы (секунды).
 	// Даёт Xray время поднять все inbound'ы после перезапуска.
 	RestartDelaySec int `json:"restart_delay_sec"`
@@ -148,6 +152,7 @@ func defaultConfig() *Config {
 			DirectURLs:         []string{"https://ya.ru", "https://www.google.com", "https://1.1.1.1"},
 			BackgroundCycleMin: 30,
 			SwitchFasterMs:     200,
+			StatsFile:          "/tmp/xsub-stats.json",
 			RestartDelaySec:    7,
 			RestartXray:        true,
 		},

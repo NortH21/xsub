@@ -408,3 +408,48 @@ func TestWriteAtomicMode(t *testing.T) {
 		t.Fatalf("в каталоге лишние файлы: %v", names)
 	}
 }
+
+func TestStatsSurviveRestart(t *testing.T) {
+	c := defaultConfig()
+	c.Watch.StatsFile = filepath.Join(t.TempDir(), "stats.json")
+	now := time.Now()
+
+	w := newWatcher(c)
+	w.stats["node-aaa"] = newStats()
+	for i := 0; i < 5; i++ {
+		w.stats["node-aaa"].record(true, now.Add(-time.Duration(i)*slotDur))
+	}
+	w.stats["node-bbb"] = newStats()
+	w.stats["node-bbb"].record(false, now)
+	w.saveStats()
+
+	// Новый процесс: тот же файл, статистика на месте.
+	w2 := newWatcher(c)
+	got := w2.stats["node-aaa"]
+	if got == nil || got.OK != 5 || len(got.Slots) != 5 {
+		t.Fatalf("%+v", got)
+	}
+	if b := w2.stats["node-bbb"]; b == nil || b.Fail != 1 {
+		t.Fatalf("%+v", b)
+	}
+	// Seen в файл не пишется — иначе первая же чистка сочла бы узлы сиротами.
+	w2.dropOrphans(time.Now())
+	if len(w2.stats) != 2 {
+		t.Fatalf("после чистки сирот осталось %d", len(w2.stats))
+	}
+
+	// Протухшая копия не поднимается: за сутки засечки вытесняются целиком.
+	b, _ := json.Marshal(statsDump{At: now.Add(-25 * time.Hour), Nodes: w.stats})
+	if err := os.WriteFile(c.Watch.StatsFile, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if w3 := newWatcher(c); len(w3.stats) != 0 {
+		t.Fatalf("старая копия не должна подниматься: %d", len(w3.stats))
+	}
+
+	// Без файла — просто пустая статистика, без ошибок.
+	c.Watch.StatsFile = ""
+	if w4 := newWatcher(c); len(w4.stats) != 0 {
+		t.Fatal("с выключенным сохранением статистика должна быть пустой")
+	}
+}

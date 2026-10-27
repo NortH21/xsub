@@ -193,6 +193,7 @@ func main() {
 		go a.subLoop(ctx)
 		go a.healLoop(ctx)
 		go every(ctx, "обновлении geo", time.Duration(c.Geo.IntervalHours)*time.Hour, func() { a.updateGeo(true) })
+		go every(ctx, "сохранении истории проверок", 5*time.Minute, a.w.saveStats)
 		goSafe("проверке обновлений", func() {
 			time.Sleep(2 * time.Minute)
 			safely("проверке обновлений", a.checkUpdate)
@@ -202,6 +203,7 @@ func main() {
 	})
 
 	<-ctx.Done()
+	a.w.saveStats() // до Shutdown: S99xsub stop добивает процесс через секунду
 	lg.Printf("xsub остановлен")
 	sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

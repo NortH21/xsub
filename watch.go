@@ -67,7 +67,11 @@ type Watcher struct {
 	notify func(key, text string) // уведомления (Telegram); может быть nil
 }
 
-func newWatcher(c *Config) *Watcher { return &Watcher{c: c, stats: map[string]*NodeStats{}} }
+func newWatcher(c *Config) *Watcher {
+	w := &Watcher{c: c, stats: map[string]*NodeStats{}}
+	w.loadStats()
+	return w
+}
 
 // say пишет в журнал, в историю и (если key не пустой) отправляет уведомление.
 func (w *Watcher) say(key, kind, text string) {
