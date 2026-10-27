@@ -272,25 +272,19 @@ func isInfoAddress(host string, port int) bool {
 }
 
 // identityTag — тег узла по стабильным полям: протокол, адрес, порт, тип транспорта,
-// режим безопасности, SNI и учётная запись (UUID или пароль).
-// Path намеренно исключён: панели (например, Remnawave, gsupport) генерируют токен в пути
-// при каждой выдаче подписки, что делало все узлы «новыми» после каждого обновления.
-// ShortId Reality также не входил в хеш изначально — по той же причине.
+// режим безопасности и учётная запись (UUID или пароль).
+// SNI и path намеренно не включены: панели (Remnawave, gsupport и другие) ротируют их
+// между запросами для обхода DPI, что делало все узлы «новыми» после каждого обновления.
+// ShortId Reality не входил в хеш изначально — по той же причине.
 func identityTag(prefix string, ob map[string]any) string {
 	host, port := outboundAddr(ob)
 	ss, _ := ob["streamSettings"].(map[string]any)
 	parts := []string{anyStr(ob["protocol"]), strings.ToLower(host), strconv.Itoa(port), nodeCredential(ob)}
 	if ss != nil {
-		sni := anyStr(nestedGet(ss, "tlsSettings", "serverName"))
-		if sni == "" {
-			sni = anyStr(nestedGet(ss, "realitySettings", "serverName"))
-		}
-		parts = append(parts, anyStr(ss["network"]), anyStr(ss["security"]), strings.ToLower(sni))
+		parts = append(parts, anyStr(ss["network"]), anyStr(ss["security"]))
 	}
 	h := sha1.Sum([]byte(strings.Join(parts, "|")))
-	tag := prefix + hex.EncodeToString(h[:])[:8]
-	lg.Printf("[tag-debug] %s:%d → %s (parts: %v)", strings.ToLower(host), port, tag, parts)
-	return tag
+	return prefix + hex.EncodeToString(h[:])[:8]
 }
 
 // nodeCredential извлекает UUID или пароль из outbound для использования в identityTag.
@@ -314,20 +308,6 @@ func nodeCredential(ob map[string]any) string {
 		}
 	}
 	return ""
-}
-
-// nestedGet читает вложенное поле map[string]any по цепочке ключей.
-func nestedGet(m map[string]any, keys ...string) any {
-	for i, k := range keys {
-		if i == len(keys)-1 {
-			return m[k]
-		}
-		m, _ = m[k].(map[string]any)
-		if m == nil {
-			return nil
-		}
-	}
-	return nil
 }
 
 func hostPort(u *url.URL) (string, int, error) {
