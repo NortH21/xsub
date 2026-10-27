@@ -135,7 +135,9 @@ func (w *Watcher) background() {
 	w.mu.Lock()
 	active := map[string]bool{}
 	for _, t := range w.targets {
-		active[t.Active] = true
+		if t.Active != "" { // у цели может не быть узла — пустой ключ в карте ни к чему
+			active[t.Active] = true
+		}
 	}
 	due := pickDue(append(append([]*NodeState(nil), w.nodes...), w.fbs...), active, time.Now(), cycle, tick)
 	w.mu.Unlock()

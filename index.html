@@ -753,7 +753,10 @@ async function doUpdate() {
   await loadFbs();
   loadDiag(); setInterval(loadDiag, 300000);
   await fetchList('vpn'); showList(); renderListTabs();
-  setInterval(load, 10000);
+  // Вкладку со страницей часто оставляют открытой на неделю, а каждый опрос — это
+  // работа на роутере. В скрытой вкладке опрос не нужен, при возврате обновляем сразу.
+  setInterval(() => { if (!document.hidden) load(); }, 10000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 })();
 </script>
 </body>
