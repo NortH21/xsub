@@ -271,45 +271,61 @@ func isInfoAddress(host string, port int) bool {
 	return false
 }
 
-// identityTag — тег узла по тому, куда он подключается: протокол, адрес, порт, транспорт,
-// шифрование, SNI и путь. Не зависит от имени и параметров, которые панели меняют
-// при каждой выдаче подписки (Remnawave, например, выбирает случайный shortId):
-// иначе после каждого обновления подписки узлы получали бы новые теги, теряли историю
-// проверок и сторож заново выбирал узел.
+// identityTag — тег узла по стабильным полям: протокол, адрес, порт, тип транспорта,
+// режим безопасности, SNI и учётная запись (UUID или пароль).
+// Path намеренно исключён: панели (например, Remnawave, gsupport) генерируют токен в пути
+// при каждой выдаче подписки, что делало все узлы «новыми» после каждого обновления.
+// ShortId Reality также не входил в хеш изначально — по той же причине.
 func identityTag(prefix string, ob map[string]any) string {
 	host, port := outboundAddr(ob)
 	ss, _ := ob["streamSettings"].(map[string]any)
-	get := func(m map[string]any, keys ...string) string {
-		for i, k := range keys {
-			if i == len(keys)-1 {
-				return anyStr(m[k])
-			}
-			m, _ = m[k].(map[string]any)
-			if m == nil {
-				return ""
-			}
-		}
-		return ""
-	}
-	parts := []string{anyStr(ob["protocol"]), strings.ToLower(host), strconv.Itoa(port)}
+	parts := []string{anyStr(ob["protocol"]), strings.ToLower(host), strconv.Itoa(port), nodeCredential(ob)}
 	if ss != nil {
-		sni := get(ss, "tlsSettings", "serverName")
+		sni := anyStr(nestedGet(ss, "tlsSettings", "serverName"))
 		if sni == "" {
-			sni = get(ss, "realitySettings", "serverName")
+			sni = anyStr(nestedGet(ss, "realitySettings", "serverName"))
 		}
-		path := ""
-		for _, k := range []string{"wsSettings", "httpupgradeSettings", "xhttpSettings", "splithttpSettings"} {
-			if p := get(ss, k, "path"); p != "" {
-				path = p
-			}
-		}
-		if s := get(ss, "grpcSettings", "serviceName"); s != "" {
-			path = s
-		}
-		parts = append(parts, anyStr(ss["network"]), anyStr(ss["security"]), strings.ToLower(sni), path)
+		parts = append(parts, anyStr(ss["network"]), anyStr(ss["security"]), strings.ToLower(sni))
 	}
 	h := sha1.Sum([]byte(strings.Join(parts, "|")))
 	return prefix + hex.EncodeToString(h[:])[:8]
+}
+
+// nodeCredential извлекает UUID или пароль из outbound для использования в identityTag.
+func nodeCredential(ob map[string]any) string {
+	st, _ := ob["settings"].(map[string]any)
+	if st == nil {
+		return ""
+	}
+	if l, _ := st["vnext"].([]any); len(l) > 0 { // vless, vmess
+		if m, _ := l[0].(map[string]any); m != nil {
+			if users, _ := m["users"].([]any); len(users) > 0 {
+				if u, _ := users[0].(map[string]any); u != nil {
+					return anyStr(u["id"])
+				}
+			}
+		}
+	}
+	if l, _ := st["servers"].([]any); len(l) > 0 { // trojan, shadowsocks, hysteria2
+		if m, _ := l[0].(map[string]any); m != nil {
+			return anyStr(m["password"])
+		}
+	}
+	return ""
+}
+
+// nestedGet читает вложенное поле map[string]any по цепочке ключей.
+func nestedGet(m map[string]any, keys ...string) any {
+	for i, k := range keys {
+		if i == len(keys)-1 {
+			return m[k]
+		}
+		m, _ = m[k].(map[string]any)
+		if m == nil {
+			return nil
+		}
+	}
+	return nil
 }
 
 func hostPort(u *url.URL) (string, int, error) {
