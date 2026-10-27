@@ -44,6 +44,11 @@ type App struct {
 	xrayGone  int       // сколько проверок подряд ядро не запущено
 	latest    string    // последняя версия на GitHub
 
+	// fetchMu — одно скачивание за раз (подписки, geo, внешние списки). Отдельно от opMu:
+	// сеть с таймаутами в полторы минуты не должна держать сторож. Порядок захвата
+	// всегда fetchMu → opMu, обратный порядок запрещён.
+	fetchMu sync.Mutex
+
 	kick chan struct{} // внеочередное обновление подписок
 }
 
@@ -170,16 +175,15 @@ func (a *App) rememberWritten() {
 
 // startup: geo-файлы, внешние списки, узлы из кэша, применение, выбор узлов.
 func (a *App) startup() {
-	opMu.Lock()
-	defer opMu.Unlock()
-	a.updateGeoLocked(false)
-	a.updateRemotesLocked(false)
-	nodes := a.collect(false)
+	a.updateGeo(false)
+	nodes := a.collect(false) // только сохранённые копии, без сети
 	a.mu.Lock()
 	haveSubs := len(a.subs) > 0
 	a.mu.Unlock()
 	// Сохранённых копий нет, а подписки есть — их сейчас скачает subLoop; лишний перезапуск Xray не нужен.
 	if len(nodes) > 0 || !haveSubs {
+		opMu.Lock()
+		defer opMu.Unlock()
 		_ = a.apply(nodes, "запуск", false)
 	}
 }
@@ -271,9 +275,9 @@ func (a *App) collect(fetch bool) []Node {
 
 // refreshSubs скачивает все подписки и применяет. Возвращает true, если какая-то не скачалась.
 func (a *App) refreshSubs() (failed bool) {
-	opMu.Lock()
-	defer opMu.Unlock()
-	nodes := a.collect(true)
+	a.fetchMu.Lock()
+	defer a.fetchMu.Unlock()
+	nodes := a.collect(true) // сеть: до полутора минут на подписку, сторож в это время работает
 	a.mu.Lock()
 	for _, st := range a.states {
 		if st.Err != "" {
@@ -281,7 +285,10 @@ func (a *App) refreshSubs() (failed bool) {
 		}
 	}
 	a.mu.Unlock()
-	if err := a.apply(nodes, "обновление подписок", false); err != nil {
+	opMu.Lock()
+	err := a.apply(nodes, "обновление подписок", false)
+	opMu.Unlock()
+	if err != nil {
 		return true
 	}
 	a.checkSubLimits()
@@ -401,9 +408,8 @@ func (a *App) saveList(name, text string) error {
 	if len(errs) > 0 {
 		return fmt.Errorf("%s", strings.Join(errs, "\n"))
 	}
-	opMu.Lock()
-	defer opMu.Unlock()
-	// новые внешние списки скачиваем сразу, чтобы они попали в конфиг
+	// Новые внешние списки скачиваем сразу, чтобы они попали в конфиг, — но до opMu.
+	a.fetchMu.Lock()
 	var rerrs []string
 	for _, u := range remotes {
 		if _, err := os.Stat(remotePath(a.c, u)); err != nil {
@@ -412,9 +418,12 @@ func (a *App) saveList(name, text string) error {
 			}
 		}
 	}
+	a.fetchMu.Unlock()
 	if len(rerrs) > 0 {
 		return fmt.Errorf("не удалось скачать внешний список:\n%s", strings.Join(rerrs, "\n"))
 	}
+	opMu.Lock()
+	defer opMu.Unlock()
 	p := a.c.path(file)
 	old, _ := os.ReadFile(p)
 	if err := writeAtomicMode(p, []byte(text), 0o600); err != nil {
@@ -488,14 +497,15 @@ func newGroupID(gs []Group) string {
 }
 
 func (a *App) updateGeo(force bool) {
-	opMu.Lock()
-	defer opMu.Unlock()
-	a.updateGeoLocked(force)
-	a.updateRemotesLocked(force)
+	a.fetchMu.Lock()
+	defer a.fetchMu.Unlock()
+	a.updateGeoFiles(force)
+	a.updateRemotes(force)
 }
 
-// updateRemotesLocked обновляет внешние списки (force=false — только отсутствующие) и применяет, если что-то изменилось.
-func (a *App) updateRemotesLocked(force bool) {
+// updateRemotes обновляет внешние списки (force=false — только отсутствующие) и применяет,
+// если что-то изменилось. Скачивание идёт без opMu, под ним только применение. Под fetchMu.
+func (a *App) updateRemotes(force bool) {
 	rs, _, err := readRouting(a.c)
 	if err != nil {
 		return
@@ -515,16 +525,20 @@ func (a *App) updateRemotesLocked(force bool) {
 			changed = true
 		}
 	}
-	if changed && managed(a.c) {
-		a.mu.Lock()
-		nodes := a.nodes
-		a.mu.Unlock()
-		_ = a.apply(nodes, "обновлены внешние списки", false)
+	if !changed || !managed(a.c) {
+		return
 	}
+	a.mu.Lock()
+	nodes := a.nodes
+	a.mu.Unlock()
+	opMu.Lock()
+	defer opMu.Unlock()
+	_ = a.apply(nodes, "обновлены внешние списки", false)
 }
 
-// updateGeoLocked: при force=false качает только отсутствующие файлы.
-func (a *App) updateGeoLocked(force bool) {
+// updateGeoFiles: при force=false качает только отсутствующие файлы. Скачивание идёт
+// без opMu, под ним только проверка конфига и перезапуск Xray. Под fetchMu.
+func (a *App) updateGeoFiles(force bool) {
 	var changed, errs []string
 	for _, g := range a.c.Geo.Files {
 		p := filepath.Join(a.c.Xray.AssetDir, g.Name)
@@ -563,6 +577,8 @@ func (a *App) updateGeoLocked(force bool) {
 	if len(changed) == 0 || xrayStartTime(a.c) == "" {
 		return
 	}
+	opMu.Lock()
+	defer opMu.Unlock()
 	if err := xrayTest(a.c, a.c.Xray.ConfDir); err != nil {
 		lg.Printf("новые geo-файлы не прошли проверку, возвращаю старые: %v", err)
 		for _, p := range changed {
