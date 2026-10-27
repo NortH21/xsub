@@ -38,6 +38,14 @@ func (g *geoCacheT) reset() {
 
 func readVarint(r *bufio.Reader) (uint64, error) { return binary.ReadUvarint(r) }
 
+// Границы на длины из файла: varint приходит из geo-файла, который мы скачали по
+// ссылке из конфига. У битого или подменённого файла длина может быть любой, а
+// make([]byte, l) на такой длине — это паника, которая на роутере роняет демон.
+const (
+	maxGeoEntry = 128 << 20 // запись верхнего уровня: категория целиком
+	maxGeoCode  = 1 << 10   // код категории — короткая строка
+)
+
 // forEachEntry проходит по записям верхнего уровня (поле 1) и отдаёт код категории и тело записи,
 // если want(код) == true; остальные записи пропускаются без чтения в память.
 func forEachEntry(path string, want func(code string) bool, fn func(code string, body []byte) error) error {
@@ -47,6 +55,7 @@ func forEachEntry(path string, want func(code string) bool, fn func(code string,
 	}
 	defer f.Close()
 	r := bufio.NewReaderSize(f, 64<<10)
+	br := bufio.NewReader(r) // переиспользуется на каждой записи через Reset
 	for {
 		key, err := readVarint(r)
 		if err == io.EOF {
@@ -62,21 +71,26 @@ func forEachEntry(path string, want func(code string) bool, fn func(code string,
 		if err != nil {
 			return err
 		}
+		if size > maxGeoEntry {
+			return fmt.Errorf("%s: запись длиной %d байт — файл повреждён", filepath.Base(path), size)
+		}
 		// первое поле записи — код категории (строка, поле 1)
 		lr := io.LimitReader(r, int64(size))
-		br := bufio.NewReader(lr)
+		br.Reset(lr)
 		k, err := readVarint(br)
 		if err != nil {
 			return err
 		}
 		if k != (1<<3 | 2) {
-			_, _ = io.Copy(io.Discard, lr)
-			_, _ = io.Copy(io.Discard, br)
+			_, _ = io.Copy(io.Discard, br) // br читает через lr — выбирается и то и другое
 			continue
 		}
 		l, err := readVarint(br)
 		if err != nil {
 			return err
+		}
+		if l > maxGeoCode {
+			return fmt.Errorf("%s: код категории длиной %d байт — файл повреждён", filepath.Base(path), l)
 		}
 		codeB := make([]byte, l)
 		if _, err := io.ReadFull(br, codeB); err != nil {

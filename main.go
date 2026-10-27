@@ -87,7 +87,12 @@ func randomPassword(n int) string {
 	const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	var b strings.Builder
 	for i := 0; i < n; i++ {
-		k, _ := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		k, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			// Без надёжной случайности пароль придумывать нельзя.
+			fmt.Fprintln(os.Stderr, "xsub: нет источника случайных чисел:", err)
+			os.Exit(1)
+		}
 		b.WriteByte(alphabet[k.Int64()])
 	}
 	return b.String()
