@@ -288,7 +288,9 @@ func identityTag(prefix string, ob map[string]any) string {
 		parts = append(parts, anyStr(ss["network"]), anyStr(ss["security"]), strings.ToLower(sni))
 	}
 	h := sha1.Sum([]byte(strings.Join(parts, "|")))
-	return prefix + hex.EncodeToString(h[:])[:8]
+	tag := prefix + hex.EncodeToString(h[:])[:8]
+	lg.Printf("[tag-debug] %s:%d → %s (parts: %v)", strings.ToLower(host), port, tag, parts)
+	return tag
 }
 
 // nodeCredential извлекает UUID или пароль из outbound для использования в identityTag.
