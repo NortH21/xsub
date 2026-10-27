@@ -271,32 +271,56 @@ func testOutbounds(c *Config, nodes []Node) error {
 
 // validateNodes отсеивает узлы, которые не принимает установленный Xray
 // (например, новый транспорт на старом ядре), чтобы один узел не ломал весь конфиг.
+// Плохие узлы ищутся делением пополам: каждая проверка — это запуск xray -test
+// отдельным процессом, а на mipsel он занимает секунды. Набор, прошедший целиком,
+// принимается одним запуском, поэтому при одном плохом узле из шестидесяти выходит
+// около десятка запусков вместо шестидесяти.
 func validateNodes(c *Config, nodes []Node) (good []Node, bad []string) {
-	if len(nodes) == 0 || testOutbounds(c, nodes) == nil {
-		return nodes, nil
-	}
-	for _, n := range nodes {
-		err := testOutbounds(c, []Node{n})
-		if err != nil {
-			// Для более старых версий Xray пробуем упрощённый вариант узла.
-			if alt, note, ok := legacyVariant(n); ok && testOutbounds(c, []Node{alt}) == nil {
-				lg.Printf("%s: %s", n.Name, note)
-				good = append(good, alt)
-				continue
-			}
+	return bisectNodes(nodes, func(ns []Node) error { return testOutbounds(c, ns) })
+}
+
+// bisectNodes делит набор пополам, пока не найдёт каждый непринимаемый узел.
+// test — проверка набора целиком; вынесена параметром, чтобы обходиться без Xray в тестах.
+func bisectNodes(nodes []Node, test func([]Node) error) (good []Node, bad []string) {
+	var walk func(ns []Node)
+	walk = func(ns []Node) {
+		if len(ns) == 0 {
+			return
 		}
-		if err != nil {
-			msg := err.Error()
-			if i := strings.LastIndex(msg, " > "); i >= 0 {
-				msg = msg[i+3:]
-			}
-			msg = strings.TrimSpace(strings.SplitN(msg, "\n", 2)[0])
-			bad = append(bad, fmt.Sprintf("%s: Xray не принял узел (%s)", n.Name, msg))
-			continue
+		err := test(ns)
+		if err == nil {
+			good = append(good, ns...)
+			return
 		}
-		good = append(good, n)
+		if len(ns) > 1 {
+			mid := len(ns) / 2 // порядок узлов сохраняется: сначала левая половина
+			walk(ns[:mid])
+			walk(ns[mid:])
+			return
+		}
+		n := ns[0]
+		// Для более старых версий Xray пробуем упрощённый вариант узла.
+		if alt, note, ok := legacyVariant(n); ok && test([]Node{alt}) == nil {
+			lg.Printf("%s: %s", n.Name, note)
+			good = append(good, alt)
+			return
+		}
+		bad = append(bad, fmt.Sprintf("%s: Xray не принял узел (%s)", n.Name, xrayReason(err)))
 	}
+	walk(nodes)
 	return good, bad
+}
+
+// xrayReason вытаскивает из вывода xray -test последнюю, самую внятную часть.
+func xrayReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if i := strings.LastIndex(msg, " > "); i >= 0 {
+		msg = msg[i+3:]
+	}
+	return strings.TrimSpace(strings.SplitN(msg, "\n", 2)[0])
 }
 
 // legacyVariant переписывает узел под Xray до 26.10: без перебора портов (udphop)

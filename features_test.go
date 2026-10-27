@@ -527,3 +527,69 @@ func TestWatcherConcurrent(t *testing.T) {
 		t.Fatal("узлы пропали")
 	}
 }
+
+func TestBisectNodes(t *testing.T) {
+	mk := func(names ...string) []Node {
+		var out []Node
+		for _, n := range names {
+			out = append(out, Node{Tag: "node-" + n, Name: n, Outbound: map[string]any{"tag": "node-" + n}})
+		}
+		return out
+	}
+	nodes := mk("a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l")
+
+	// Проверка набора: падает, если в нём есть «плохой» узел.
+	runs := 0
+	tester := func(broken map[string]bool) func([]Node) error {
+		return func(ns []Node) error {
+			runs++
+			for _, n := range ns {
+				if broken[n.Name] {
+					return fmt.Errorf("плохой узел > unsupported transport\nвторая строка")
+				}
+			}
+			return nil
+		}
+	}
+
+	// Все узлы хорошие — один запуск.
+	runs = 0
+	good, bad := bisectNodes(nodes, tester(nil))
+	if len(good) != 12 || len(bad) != 0 || runs != 1 {
+		t.Fatalf("хороший набор: good=%d bad=%v запусков=%d", len(good), bad, runs)
+	}
+
+	// Один плохой: порядок сохраняется, запусков заметно меньше, чем узлов.
+	runs = 0
+	good, bad = bisectNodes(nodes, tester(map[string]bool{"g": true}))
+	if len(bad) != 1 || !strings.Contains(bad[0], "g: Xray не принял узел") {
+		t.Fatalf("bad=%v", bad)
+	}
+	if !strings.Contains(bad[0], "unsupported transport") || strings.Contains(bad[0], "вторая строка") {
+		t.Errorf("в сообщении должна быть только внятная часть: %q", bad[0])
+	}
+	var names []string
+	for _, n := range good {
+		names = append(names, n.Name)
+	}
+	if strings.Join(names, "") != "abcdefhijkl" {
+		t.Errorf("порядок сбился: %v", names)
+	}
+	if runs >= len(nodes) {
+		t.Errorf("делением пополам должно быть меньше %d запусков, вышло %d", len(nodes), runs)
+	}
+
+	// Все плохие — каждый назван поимённо.
+	all := map[string]bool{}
+	for _, n := range nodes {
+		all[n.Name] = true
+	}
+	good, bad = bisectNodes(nodes, tester(all))
+	if len(good) != 0 || len(bad) != 12 {
+		t.Fatalf("good=%d bad=%d", len(good), len(bad))
+	}
+
+	if g, b := bisectNodes(nil, tester(nil)); g != nil || b != nil {
+		t.Errorf("пустой набор: %v %v", g, b)
+	}
+}
