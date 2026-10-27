@@ -118,6 +118,10 @@ func decodeSubscription(b []byte) string {
 	return s
 }
 
+// decodeB64 разбирает любой вариант base64. Кодировка выбирается по самой строке,
+// а не перебором: DecodeString сразу выделяет буфер под весь результат, и на теле
+// подписки в несколько мегабайт четыре попытки подряд — это десятки мегабайт
+// впустую на роутере, где всей памяти сотня-другая.
 func decodeB64(s string) (string, bool) {
 	clean := strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == ' ' || r == '\t' {
@@ -125,10 +129,19 @@ func decodeB64(s string) (string, bool) {
 		}
 		return r
 	}, s)
-	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
-		if d, err := enc.DecodeString(clean); err == nil {
-			return string(d), true
-		}
+	if clean == "" {
+		return "", false
+	}
+	// Алфавит и наличие дополнения видны по самой строке, перебирать не нужно.
+	enc := base64.StdEncoding
+	if strings.ContainsAny(clean, "-_") {
+		enc = base64.URLEncoding
+	}
+	if !strings.HasSuffix(clean, "=") && len(clean)%4 != 0 {
+		enc = enc.WithPadding(base64.NoPadding)
+	}
+	if d, err := enc.DecodeString(clean); err == nil {
+		return string(d), true
 	}
 	return "", false
 }

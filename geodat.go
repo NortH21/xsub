@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -17,15 +18,23 @@ import (
 // Файл читается потоком: в память попадает только нужная категория.
 
 type geoDomain struct {
-	typ   int // 0 — подстрока (keyword), 1 — регулярное выражение, 2 — домен с поддоменами, 3 — точное имя
-	value string
+	typ   int            // 0 — подстрока (keyword), 1 — регулярное выражение, 2 — домен с поддоменами, 3 — точное имя
+	value string         // для типов 0, 2 и 3 уже в нижнем регистре
+	re    *regexp.Regexp // для типа 1; компилируется один раз при загрузке категории
 	attrs []string
 }
 
+// Категория geosite — это до сотен тысяч записей, и на роутере со 128 МБ памяти
+// держать их все подряд нельзя. Кэш помнит порядок обращений и вытесняет самые
+// давние, оставляя не больше maxGeoCached категорий каждого вида.
+const maxGeoCached = 8
+
 type geoCacheT struct {
-	mu   sync.Mutex
-	site map[string][]geoDomain
-	ip   map[string][]*net.IPNet
+	mu       sync.Mutex
+	site     map[string][]geoDomain
+	ip       map[string][]*net.IPNet
+	siteKeys []string
+	ipKeys   []string
 }
 
 var geoCache = &geoCacheT{}
@@ -33,7 +42,38 @@ var geoCache = &geoCacheT{}
 func (g *geoCacheT) reset() {
 	g.mu.Lock()
 	g.site, g.ip = nil, nil
+	g.siteKeys, g.ipKeys = nil, nil
 	g.mu.Unlock()
+}
+
+// putSite кладёт категорию в кэш, вытесняя самую давнюю. Под g.mu.
+func (g *geoCacheT) putSite(key string, d []geoDomain) {
+	if g.site == nil {
+		g.site = map[string][]geoDomain{}
+	}
+	if _, ok := g.site[key]; !ok {
+		g.siteKeys = append(g.siteKeys, key)
+	}
+	g.site[key] = d
+	for len(g.siteKeys) > maxGeoCached {
+		delete(g.site, g.siteKeys[0])
+		g.siteKeys = g.siteKeys[1:]
+	}
+}
+
+// putIP — то же для категорий geoip. Под g.mu.
+func (g *geoCacheT) putIP(key string, n []*net.IPNet) {
+	if g.ip == nil {
+		g.ip = map[string][]*net.IPNet{}
+	}
+	if _, ok := g.ip[key]; !ok {
+		g.ipKeys = append(g.ipKeys, key)
+	}
+	g.ip[key] = n
+	for len(g.ipKeys) > maxGeoCached {
+		delete(g.ip, g.ipKeys[0])
+		g.ipKeys = g.ipKeys[1:]
+	}
 }
 
 func readVarint(r *bufio.Reader) (uint64, error) { return binary.ReadUvarint(r) }
@@ -198,6 +238,14 @@ func geoSite(c *Config, file, cat string) ([]geoDomain, error) {
 					}
 					return nil
 				})
+				// Регулярное выражение компилируется один раз на запись, остальные
+				// значения приводятся к нижнему регистру — иначе это делалось бы
+				// заново для каждого проверяемого домена.
+				if d.typ == 1 {
+					d.re, _ = regexp.Compile(d.value)
+				} else {
+					d.value = strings.ToLower(d.value)
+				}
 				out = append(out, d)
 				return err
 			})
@@ -209,10 +257,7 @@ func geoSite(c *Config, file, cat string) ([]geoDomain, error) {
 		return nil, fmt.Errorf("в %s нет категории %s", file, cat)
 	}
 	geoCache.mu.Lock()
-	if geoCache.site == nil {
-		geoCache.site = map[string][]geoDomain{}
-	}
-	geoCache.site[key] = out
+	geoCache.putSite(key, out)
 	geoCache.mu.Unlock()
 	return out, nil
 }
@@ -260,10 +305,7 @@ func geoIP(c *Config, file, cat string) ([]*net.IPNet, error) {
 		return nil, fmt.Errorf("в %s нет категории %s", file, cat)
 	}
 	geoCache.mu.Lock()
-	if geoCache.ip == nil {
-		geoCache.ip = map[string][]*net.IPNet{}
-	}
-	geoCache.ip[key] = out
+	geoCache.putIP(key, out)
 	geoCache.mu.Unlock()
 	return out, nil
 }

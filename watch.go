@@ -624,7 +624,34 @@ func (w *Watcher) repin(reason string) {
 // xrayStartTime — отпечаток запущенных процессов ядра (меняется при перезапуске).
 func xrayStartTime(c *Config) string { return procStamp(filepath.Base(c.Xray.Bin)) }
 
+// Отпечаток считается обходом всего /proc — на роутере это пара сотен чтений.
+// Его спрашивают тик сторожа, самовосстановление и каждый опрос статуса
+// веб-страницей (раз в десять секунд на вкладку), поэтому результат кэшируется.
+// Срок маленький: по смене отпечатка сторож узнаёт о перезапуске ядра.
+const procStampTTL = 2 * time.Second
+
+var procStamps = struct {
+	mu  sync.Mutex
+	val map[string]string
+	at  map[string]time.Time
+}{val: map[string]string{}, at: map[string]time.Time{}}
+
 func procStamp(name string) string {
+	procStamps.mu.Lock()
+	if t, ok := procStamps.at[name]; ok && time.Since(t) < procStampTTL {
+		v := procStamps.val[name]
+		procStamps.mu.Unlock()
+		return v
+	}
+	procStamps.mu.Unlock()
+	v := scanProcStamp(name)
+	procStamps.mu.Lock()
+	procStamps.val[name], procStamps.at[name] = v, time.Now()
+	procStamps.mu.Unlock()
+	return v
+}
+
+func scanProcStamp(name string) string {
 	if len(name) > 15 {
 		name = name[:15] // /proc/*/comm обрезается до 15 символов
 	}
@@ -856,9 +883,10 @@ type Status struct {
 }
 
 func (w *Watcher) status() Status {
+	up := xrayStartTime(w.c) != "" // обход /proc — не под мьютексом сторожа
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	s := Status{XrayUp: xrayStartTime(w.c) != ""}
+	s := Status{XrayUp: up}
 	for _, t := range w.targets {
 		s.Targets = append(s.Targets, TargetStatus{
 			ID: t.ID, Name: t.Name, Active: t.Active, ActiveName: w.nodeName(t.Active), Pinned: t.Pinned,

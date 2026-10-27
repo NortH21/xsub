@@ -88,14 +88,14 @@ func matchGeoSite(c *Config, file, cat, d string) (bool, error) {
 				continue
 			}
 		}
-		v := strings.ToLower(g.value)
+		v := g.value // уже в нижнем регистре, кроме типа 1 — у него готовое выражение
 		switch g.typ {
 		case 0:
 			if strings.Contains(d, v) {
 				return true, nil
 			}
 		case 1:
-			if re, err := regexp.Compile(g.value); err == nil && re.MatchString(d) {
+			if g.re != nil && g.re.MatchString(d) {
 				return true, nil
 			}
 		case 2:

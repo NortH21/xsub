@@ -275,3 +275,28 @@ func TestLogRotation(t *testing.T) {
 		t.Fatal("журнал в памяти")
 	}
 }
+
+func TestDecodeB64Variants(t *testing.T) {
+	want := "vless://x@example.com:443?type=tcp#узел~1"
+	cases := map[string]string{
+		"обычный":           base64.StdEncoding.EncodeToString([]byte(want)),
+		"без дополнения":    base64.RawStdEncoding.EncodeToString([]byte(want)),
+		"url-safe":          base64.URLEncoding.EncodeToString([]byte(want)),
+		"url-safe без доп.": base64.RawURLEncoding.EncodeToString([]byte(want)),
+	}
+	for name, enc := range cases {
+		if got, ok := decodeB64(enc); !ok || got != want {
+			t.Errorf("%s: ok=%v %q", name, ok, got)
+		}
+		// Панели переносят строки в теле подписки — пробелы и переводы строк не мешают.
+		split := enc[:len(enc)/2] + "\n" + enc[len(enc)/2:]
+		if got, ok := decodeB64(split); !ok || got != want {
+			t.Errorf("%s с переносом: ok=%v %q", name, ok, got)
+		}
+	}
+	for _, bad := range []string{"", "это не base64!!", "vless://example.com"} {
+		if _, ok := decodeB64(bad); ok {
+			t.Errorf("%q не должно разбираться как base64", bad)
+		}
+	}
+}
