@@ -25,7 +25,11 @@ jobs:
           cache: false
 
       - name: Тесты
-        run: go vet ./... && go test ./...
+        run: go vet ./... && go test -race ./...
+
+      - name: Уязвимости в зависимостях
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        continue-on-error: true
 
       - name: Сборка пакетов
         env:

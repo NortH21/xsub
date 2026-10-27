@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -451,5 +453,77 @@ func TestStatsSurviveRestart(t *testing.T) {
 	c.Watch.StatsFile = ""
 	if w4 := newWatcher(c); len(w4.stats) != 0 {
 		t.Fatal("с выключенным сохранением статистика должна быть пустой")
+	}
+}
+
+// Сторож читают и пишут сразу несколько горутин: тик, веб-страница, применение
+// подписки, сохранение истории. Тест нужен прежде всего для go test -race в CI —
+// без нагрузки детектор гонок ничего не увидит.
+func TestWatcherConcurrent(t *testing.T) {
+	c := defaultConfig()
+	c.Watch.StatsFile = filepath.Join(t.TempDir(), "stats.json")
+	w := newWatcher(c)
+
+	mkNodes := func(n int) []Node {
+		var out []Node
+		for i := 0; i < n; i++ {
+			out = append(out, Node{
+				Tag: fmt.Sprintf("node-%02d", i), Name: fmt.Sprintf("узел %d", i),
+				Proto: "vless", Address: "example.com", Port: 443,
+			})
+		}
+		return out
+	}
+	groups := []Group{{ID: "g1", Name: "группа", Filter: "узел [0-4]"}}
+	nodes := mkNodes(12)
+	w.setNodes(nodes, mkNodes(2)[:1], targetDefs(c, nodes, groups))
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	run := func(f func(i int)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				f(i)
+			}
+		}()
+	}
+
+	run(func(i int) { w.record(fmt.Sprintf("node-%02d", i%12), i%3 != 0) }) // тик сторожа
+	run(func(int) { _ = w.status() })                                       // опрос веб-страницы
+	run(func(i int) {                                                       // обновление подписки
+		ns := mkNodes(10 + i%5)
+		w.setNodes(ns, nil, targetDefs(c, ns, groups))
+	})
+	run(func(int) { w.saveStats() })
+	run(func(i int) { w.setNoNet(i%2 == 0) })
+	run(func(i int) {
+		if n := w.node(fmt.Sprintf("node-%02d", i%12)); n != nil {
+			w.mu.Lock()
+			n.LatencyMs = i % 500
+			w.mu.Unlock()
+		}
+	})
+	run(func(int) {
+		for _, tg := range w.allTargets() {
+			w.mu.Lock()
+			addSlot(&tg.Slots, true, time.Now())
+			_ = w.faster(tg)
+			w.mu.Unlock()
+		}
+	})
+
+	time.Sleep(200 * time.Millisecond)
+	close(done)
+	wg.Wait()
+
+	if len(w.status().Nodes) == 0 {
+		t.Fatal("узлы пропали")
 	}
 }
