@@ -248,7 +248,11 @@ func (l *limiter) blocked(ip string) bool {
 			recent = append(recent, t)
 		}
 	}
-	l.fails[ip] = recent
+	if len(recent) == 0 {
+		delete(l.fails, ip) // иначе карта копит по записи на каждый обращавшийся адрес
+	} else {
+		l.fails[ip] = recent
+	}
 	return len(recent) >= maxFails
 }
 
@@ -268,10 +272,38 @@ func (l *limiter) ok(ip string) {
 	l.mu.Unlock()
 }
 
-// guard: только домашняя сеть (если не разрешено иное), защита от подбора пароля,
-// Basic-авторизация; изменения — только POST с заголовком X-XSub (чужой сайт не подделает).
+// sameHost — в заголовке Host адрес самого роутера, а не чужое имя, которое
+// в момент запроса указывает на него (DNS rebinding). Пускаем IP-адрес,
+// localhost и имена роутера; остальное отклоняем.
+func sameHost(c *Config, r *http.Request) bool {
+	h := r.Host
+	if v, _, err := net.SplitHostPort(h); err == nil {
+		h = v
+	}
+	h = strings.ToLower(strings.Trim(h, "[]"))
+	switch h {
+	case "", "localhost", "my.keenetic.net", "keenetic.net":
+		return true
+	}
+	if strings.HasSuffix(h, ".lan") || strings.HasSuffix(h, ".local") {
+		return true
+	}
+	for _, a := range c.UIAllowHosts {
+		if strings.EqualFold(strings.TrimSpace(a), h) {
+			return true
+		}
+	}
+	return net.ParseIP(h) != nil
+}
+
+// guard: только домашняя сеть (если не разрешено иное), свой Host, защита от подбора
+// пароля, Basic-авторизация; изменения — только POST с заголовком X-XSub (чужой сайт не подделает).
 func (a *App) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !sameHost(a.c, r) {
+			http.Error(w, "неизвестное имя в заголовке Host — открывайте страницу по адресу роутера или добавьте имя в ui_allow_hosts", http.StatusMisdirectedRequest)
+			return
+		}
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		ip := net.ParseIP(host)
 		if !a.c.UIAllowWAN && (ip == nil || !isPrivate(ip)) {
@@ -300,6 +332,9 @@ func (a *App) guard(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		// Страница целиком инлайновая и никуда не ходит, кроме своего же API.
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

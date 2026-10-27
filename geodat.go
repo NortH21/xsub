@@ -55,7 +55,10 @@ func forEachEntry(path string, want func(code string) bool, fn func(code string,
 	}
 	defer f.Close()
 	r := bufio.NewReaderSize(f, 64<<10)
-	br := bufio.NewReader(r) // переиспользуется на каждой записи через Reset
+	// Читатель тела записи: один на весь проход, на каждой записи переставляется
+	// через Reset. Строить его поверх r нельзя — bufio.NewReader от *bufio.Reader
+	// с достаточным буфером возвращает тот же объект, и чтение замкнётся само на себя.
+	br := bufio.NewReaderSize(nil, 4<<10)
 	for {
 		key, err := readVarint(r)
 		if err == io.EOF {

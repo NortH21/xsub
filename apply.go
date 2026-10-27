@@ -203,15 +203,49 @@ func restoreFiles(c *Config, oldR, oldX []byte) {
 
 func writeAtomic(path string, b []byte) error { return writeAtomicMode(path, b, 0o644) }
 
+// writeAtomicMode пишет во временный файл рядом и переименовывает. Данные сбрасываются
+// на носитель до переименования, а каталог — после: роутер выключают из розетки, и без
+// этого после перезагрузки на месте конфига мог оказаться файл нулевой длины.
+// Имя временного файла уникально — иначе два писателя в один путь затрут друг друга.
 func writeAtomicMode(path string, b []byte, mode os.FileMode) error {
-	tmp := path + ".xsub-tmp"
-	if err := os.WriteFile(tmp, b, mode); err != nil {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".xsub-*")
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp, mode); err != nil {
+	tmp := f.Name()
+	defer func() {
+		f.Close()
+		os.Remove(tmp) // после удачного Rename файла уже нет, ошибка не важна
+	}()
+	if _, err := f.Write(b); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Chmod(mode); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	syncDir(dir)
+	return nil
+}
+
+// syncDir закрепляет само переименование. На части файловых систем роутеров
+// каталог открыть на чтение нельзя — тогда просто пропускаем.
+func syncDir(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	_ = d.Sync()
+	_ = d.Close()
 }
 
 // testOutbounds проверяет через xray -test только набор outbound'ов узлов.

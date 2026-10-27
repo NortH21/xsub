@@ -23,8 +23,11 @@ type Config struct {
 	// Старый формат (одна подписка в config.json) — переносится в subscriptions.json.
 	Legacy *Subscription `json:"subscription,omitempty"`
 
-	UIAllowWAN bool   `json:"ui_allow_wan"` // пускать на страницу не только из домашней сети
-	UpdateRepo string `json:"update_repo"`  // откуда проверять новые версии (владелец/репозиторий)
+	UIAllowWAN bool `json:"ui_allow_wan"` // пускать на страницу не только из домашней сети
+	// Имена, по которым разрешено открывать страницу, если своё не из обычных
+	// (IP-адрес, localhost, *.lan, *.local, имена роутера). Защита от DNS rebinding.
+	UIAllowHosts []string `json:"ui_allow_hosts"`
+	UpdateRepo   string   `json:"update_repo"` // откуда проверять новые версии (владелец/репозиторий)
 
 	Xray     XrayConfig     `json:"xray"`
 	Watch    WatchConfig    `json:"watchdog"`

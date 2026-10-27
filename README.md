@@ -138,6 +138,7 @@ regexp:^ads\.                    # регулярное выражение
 | `watchdog.restart_xray` | `true` | перезапускать XKeen, если Xray пропал на 3 минуты |
 | `telegram.token`, `chat_id` | — | уведомления; `expire_days` (3), `traffic_pct` (90), `on_switch`, `on_update` |
 | `ui_allow_wan` | `false` | пускать на страницу не только из домашней сети |
+| `ui_allow_hosts` | — | имена, по которым разрешено открывать страницу, если ваше не из обычных (IP-адрес, `localhost`, `*.lan`, `*.local`, имена роутера). Защита от DNS rebinding: чужой сайт не сможет обратиться к странице под своим именем |
 | `update_repo` | `furriest/xsub` | где проверять новые версии |
 | `geo.files` | itdoginfo | какие geo-файлы скачивать в `xray.assetdir` |
 

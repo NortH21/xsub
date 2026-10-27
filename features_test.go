@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -359,5 +360,51 @@ func TestNoNetReportedOnce(t *testing.T) {
 	}
 	if w.setNoNet(false) {
 		t.Fatal("в обычном состоянии сообщать нечего")
+	}
+}
+
+func TestSameHost(t *testing.T) {
+	c := defaultConfig()
+	c.UIAllowHosts = []string{"xsub.home"}
+	ok := []string{"192.168.1.1:8099", "10.0.0.5", "[fd00::1]:8099", "localhost:8099",
+		"my.keenetic.net", "router.lan", "keenetic.local", "XSUB.HOME:8099", ""}
+	bad := []string{"evil.example.com:8099", "xsub.attacker.ru", "rebind.nip.io:8099"}
+	for _, h := range ok {
+		if !sameHost(c, &http.Request{Host: h}) {
+			t.Errorf("%q должен пускаться", h)
+		}
+	}
+	for _, h := range bad {
+		if sameHost(c, &http.Request{Host: h}) {
+			t.Errorf("%q пускать нельзя", h)
+		}
+	}
+}
+
+func TestWriteAtomicMode(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cfg.json")
+	if err := writeAtomicMode(p, []byte("один"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAtomicMode(p, []byte("два"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil || string(b) != "два" {
+		t.Fatalf("%q %v", b, err)
+	}
+	fi, err := os.Stat(p)
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("права %v %v", fi.Mode().Perm(), err)
+	}
+	// Временных файлов после себя не оставляем.
+	es, _ := os.ReadDir(dir)
+	if len(es) != 1 {
+		var names []string
+		for _, e := range es {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("в каталоге лишние файлы: %v", names)
 	}
 }
