@@ -320,7 +320,7 @@ func (w *Watcher) checkAll() {
 	for _, n := range nodes {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(n *NodeState) {
+		go safely("замере задержки", func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			ms, err := w.latency(n.TestPort)
@@ -332,7 +332,7 @@ func (w *Watcher) checkAll() {
 				n.LastErr = ""
 			}
 			w.mu.Unlock()
-		}(n)
+		})
 	}
 	wg.Wait()
 }
@@ -657,7 +657,7 @@ func (w *Watcher) loop(ctx context.Context) {
 		case <-t.C:
 		}
 		if w.c.Watch.Enabled {
-			w.tick()
+			safely("проверке узлов", w.tick)
 		}
 	}
 }

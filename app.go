@@ -291,7 +291,8 @@ func (a *App) refreshSubs() (failed bool) {
 // subLoop обновляет подписки по расписанию; после неудачи — повтор через 10 минут.
 func (a *App) subLoop(ctx context.Context) {
 	for {
-		failed := a.refreshSubs()
+		failed := true
+		safely("обновлении подписок", func() { failed = a.refreshSubs() })
 		d := time.Duration(a.c.SubIntervalHours) * time.Hour
 		if failed {
 			d = 10 * time.Minute
@@ -591,7 +592,7 @@ func (a *App) healLoop(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		a.heal()
+		safely("самовосстановлении", a.heal)
 	}
 }
 
@@ -641,7 +642,7 @@ func (a *App) heal() {
 	a.afterRestart("после перезапуска Xray")
 }
 
-func every(ctx context.Context, d time.Duration, f func()) {
+func every(ctx context.Context, what string, d time.Duration, f func()) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 	for {
@@ -649,7 +650,7 @@ func every(ctx context.Context, d time.Duration, f func()) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			f()
+			safely(what, f)
 		}
 	}
 }

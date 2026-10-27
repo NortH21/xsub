@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 )
@@ -54,4 +56,30 @@ func (l *Logger) Tail(n int) []string {
 	out := make([]string, n)
 	copy(out, l.ring[len(l.ring)-n:])
 	return out
+}
+
+// safely выполняет f, не давая панике уронить демон: xsub работает на роутере,
+// где его некому поднять — упавший сторож означает, что узлы перестали переключаться.
+// Паника пишется в журнал вместе с началом стека, остальное продолжает работать.
+func safely(what string, f func()) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		lg.Printf("внутренняя ошибка в %s: %v\n%s", what, r, headLines(string(debug.Stack()), 15))
+	}()
+	f()
+}
+
+// goSafe — safely в отдельной горутине.
+func goSafe(what string, f func()) { go safely(what, f) }
+
+// headLines оставляет первые n строк — у стека паники интересно начало, а не хвост.
+func headLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = append(lines[:n:n], "…")
+	}
+	return strings.Join(lines, "\n")
 }

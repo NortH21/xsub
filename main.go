@@ -183,18 +183,18 @@ func main() {
 		}
 	}()
 
-	go func() {
-		a.startup()
+	goSafe("запуске", func() {
+		safely("начальной настройке", a.startup)
 		go a.subLoop(ctx)
 		go a.healLoop(ctx)
-		go every(ctx, time.Duration(c.Geo.IntervalHours)*time.Hour, func() { a.updateGeo(true) })
-		go func() {
+		go every(ctx, "обновлении geo", time.Duration(c.Geo.IntervalHours)*time.Hour, func() { a.updateGeo(true) })
+		goSafe("проверке обновлений", func() {
 			time.Sleep(2 * time.Minute)
-			a.checkUpdate()
-			every(ctx, 24*time.Hour, a.checkUpdate)
-		}()
+			safely("проверке обновлений", a.checkUpdate)
+			every(ctx, "проверке обновлений", 24*time.Hour, a.checkUpdate)
+		})
 		a.w.loop(ctx)
-	}()
+	})
 
 	<-ctx.Done()
 	lg.Printf("xsub остановлен")

@@ -54,11 +54,11 @@ func (n *Notifier) send(key, text string, gap time.Duration) {
 	n.last[key] = now
 	n.hour = append(recent, now)
 	n.mu.Unlock()
-	go func() {
+	goSafe("отправке в Telegram", func() {
 		if err := n.post(text); err != nil {
 			lg.Printf("Telegram: %v", err)
 		}
-	}()
+	})
 }
 
 func (n *Notifier) post(text string) error {

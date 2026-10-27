@@ -3,6 +3,12 @@
 [ -n "$IPKG_INSTROOT" ] && exit 0
 export PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Сначала убираем присмотр, иначе cron поднимет xsub обратно сразу после остановки.
+if [ "$1" = "remove" ] && [ -f /opt/etc/crontabs/root ]; then
+  sed -i '/S99xsub start/d' /opt/etc/crontabs/root
+  [ -x /opt/etc/init.d/S10cron ] && /opt/etc/init.d/S10cron restart >/dev/null 2>&1
+fi
+
 /opt/etc/init.d/S99xsub stop >/dev/null 2>&1
 
 if [ "$1" = "remove" ] && [ -x /opt/sbin/xsub ] && [ -f /opt/etc/xsub/config.json ]; then

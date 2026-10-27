@@ -20,6 +20,18 @@ if [ ! -x /opt/sbin/xray ]; then
   echo "xsub: не найден /opt/sbin/xray — установите XKeen с ядром Xray (xkeen -xray)."
 fi
 
+# Присмотр за процессом: на роутере xsub некому поднять, если он всё-таки упадёт.
+# Раз в пять минут cron проверяет и запускает заново. Нет cron — шаг пропускается.
+if command -v crond >/dev/null 2>&1; then
+  CRON=/opt/etc/crontabs/root
+  mkdir -p /opt/etc/crontabs
+  touch "$CRON"
+  if ! grep -q 'S99xsub start' "$CRON"; then
+    echo '*/5 * * * * /opt/etc/init.d/S99xsub status >/dev/null 2>&1 || /opt/etc/init.d/S99xsub start >/dev/null 2>&1' >> "$CRON"
+    [ -x /opt/etc/init.d/S10cron ] && /opt/etc/init.d/S10cron restart >/dev/null 2>&1
+  fi
+fi
+
 /opt/etc/init.d/S99xsub restart >/dev/null 2>&1
 
 IP=$(ip -4 addr show br0 2>/dev/null | awk '/inet /{split($2,a,"/"); print a[1]; exit}')
