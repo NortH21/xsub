@@ -61,6 +61,7 @@ type Watcher struct {
 	targets   []*Target
 	stats     map[string]*NodeStats // переживает обновление подписки
 	seeded    bool                  // список узлов уже заполнялся хотя бы раз
+	noNet     bool                  // не отвечает ни один direct_urls — проверки приостановлены
 	xrayStart string
 
 	notify func(key, text string) // уведомления (Telegram); может быть nil
@@ -286,6 +287,18 @@ func (w *Watcher) internetOK() bool {
 		}
 	}
 	return false
+}
+
+// setNoNet запоминает, есть ли связь с интернетом. Возвращает true, если состояние
+// изменилось: сообщить об этом нужно один раз, а не каждый тик.
+func (w *Watcher) setNoNet(down bool) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.noNet == down {
+		return false
+	}
+	w.noNet = down
+	return true
 }
 
 // measure обновляет задержку узла. Текст ошибки не трогает: он остаётся от проверки
@@ -663,7 +676,7 @@ func (w *Watcher) tick() {
 		return
 	}
 	if restarted {
-		time.Sleep(3 * time.Second)
+		time.Sleep(time.Duration(w.c.Watch.RestartDelaySec) * time.Second)
 		lg.Printf("Xray перезапущен — закрепляю выбранные узлы снова")
 		w.repin("после перезапуска Xray")
 	}
@@ -694,7 +707,12 @@ func (w *Watcher) checkTarget(t *Target) {
 	err := w.realTest(t.ProbePort)
 	if err != nil {
 		if !w.internetOK() {
-			return // нет интернета вообще — VPN не виноват
+			// Интернета нет вообще — VPN не виноват, и проверка не записывается.
+			// Иначе в полосе за сутки появляется необъяснимая дырка.
+			if w.setNoNet(true) {
+				w.say("", "down", "нет связи с интернетом: не отвечает ни один адрес из direct_urls — проверки узлов приостановлены")
+			}
+			return
 		}
 		// Закрепление могло пропасть (Xray перезапускался) — восстанавливаем и проверяем ещё раз.
 		if w.override(t.Balancer, active) == nil {
@@ -703,6 +721,9 @@ func (w *Watcher) checkTarget(t *Target) {
 				err = nil
 			}
 		}
+	}
+	if w.setNoNet(false) {
+		w.say("", "up", "связь с интернетом вернулась — проверки узлов возобновлены")
 	}
 	w.record(active, err == nil)
 	if err == nil {

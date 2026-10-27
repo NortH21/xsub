@@ -345,3 +345,19 @@ func TestFasterNode(t *testing.T) {
 		t.Fatalf("узлы не из группы не годятся: %s", n.Tag)
 	}
 }
+
+func TestNoNetReportedOnce(t *testing.T) {
+	w := newWatcher(defaultConfig())
+	if !w.setNoNet(true) {
+		t.Fatal("о пропаже связи нужно сообщить")
+	}
+	if w.setNoNet(true) {
+		t.Fatal("пока связи нет, сообщать каждый тик не нужно")
+	}
+	if !w.setNoNet(false) {
+		t.Fatal("о возвращении связи нужно сообщить")
+	}
+	if w.setNoNet(false) {
+		t.Fatal("в обычном состоянии сообщать нечего")
+	}
+}
