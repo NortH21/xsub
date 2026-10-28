@@ -52,6 +52,9 @@ pre{margin:0;max-height:420px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Co
 #nodesTable td.rel{min-width:170px}
 #nodesTable td.state{width:100%;overflow-wrap:anywhere}
 #nodesTable .addr,#nodesTable .when{white-space:nowrap}
+#nodesTable th.sort{cursor:pointer;user-select:none;white-space:nowrap}
+#nodesTable th.sort:hover{color:var(--text)}
+#nodesTable th .arr{display:inline-block;width:12px;margin-left:3px;font-style:normal;color:var(--acc)}
 .strip{display:flex;gap:1px;height:14px;margin-top:6px}
 .strip i{flex:1;border-radius:2px;background:var(--none)}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;margin-left:6px}
@@ -165,7 +168,12 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
   <section>
     <h2 data-i18n="tabNodes"></h2>
     <div class="scroll"><table id="nodesTable">
-      <thead><tr><th data-i18n="thNode"></th><th class="lat" data-i18n="thLat"></th><th class="rel" data-i18n="thRel"></th><th class="state" data-i18n="thState"></th><th class="btn"></th></tr></thead>
+      <thead><tr>
+        <th class="sort" data-i18n-title="sortHint" onclick="sortBy('name')"><span data-i18n="thNode"></span><i class="arr" id="arrName"></i></th>
+        <th class="lat sort" data-i18n-title="sortHint" onclick="sortBy('lat')"><span data-i18n="thLat"></span><i class="arr" id="arrLat"></i></th>
+        <th class="rel sort" data-i18n-title="sortHint" onclick="sortBy('rel')"><span data-i18n="thRel"></span><i class="arr" id="arrRel"></i></th>
+        <th class="state" data-i18n="thState"></th><th class="btn"></th>
+      </tr></thead>
       <tbody id="nodes"></tbody>
     </table></div>
     <p class="muted" data-i18n="nodesHint"></p>
@@ -315,7 +323,7 @@ ru: {
   fbImportTitle:'Перенести из конфигов Xray', fbImportHint:'Outbound скопируется в xsub; исходный файл XKeen не меняется — после переноса его можно удалить оттуда.', fbImported:'уже перенесён', fbLegacy:'сейчас запасной', fbImportBtn:'Перенести',
   fallback:'резерв', up:'Выше', downBtn:'Ниже', fbOnline:'работает', fbOffline:'не отвечает',
   del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
-  lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', active:'Активен', badUntil:'исключён до', select:'Выбрать', for:'для',
+  lastTest:'проверен', agoMin:'мин назад', agoH:'ч назад', justNow:'только что', thNode:'Узел', thLat:'Задержка', thRel:'Надёжность', thState:'Состояние', sortHint:'щелчок — сортировка, ещё раз — наоборот, третий — как в конфиге', active:'Активен', badUntil:'исключён до', select:'Выбрать', for:'для',
   nodesHint:'Надёжность — доля удачных проверок загрузкой: активный узел проверяется при каждой проверке сторожа, каждый запасной — в фоне раз в N минут (задаётся в настройках). Задержка обновляется при каждой такой проверке. При сбое сначала выбираются надёжные узлы, потом быстрые.',
   listVPN:'Через VPN', listDirect:'Напрямую', saveApply:'Сохранить и применить', applying:'Проверяю и применяю…', applied:'Применено.', unsaved:'Есть несохранённые изменения. Переключиться без сохранения?',
   listHint:'Одна запись на строку: example.com — с поддоменами, =example.com — только он, geosite:…, ext:файл.dat:…, IP или подсеть. Строка-ссылка https://… подключает внешний список (обновляется раз в сутки). Порядок: «Напрямую», затем группы, затем «Через VPN»; остальное — напрямую.',
@@ -350,7 +358,7 @@ en: {
   fbImportTitle:'Move from Xray configs', fbImportHint:'The outbound is copied into xsub; the XKeen file is not changed — you can delete it there afterwards.', fbImported:'already moved', fbLegacy:'current fallback', fbImportBtn:'Move',
   fallback:'fallback', up:'Up', downBtn:'Down', fbOnline:'working', fbOffline:'not responding',
   del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
-  lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', active:'Active', badUntil:'excluded until', select:'Select', for:'for',
+  lastTest:'checked', agoMin:'min ago', agoH:'h ago', justNow:'just now', thNode:'Node', thLat:'Latency', thRel:'Reliability', thState:'State', sortHint:'click to sort, again to reverse, third time back to config order', active:'Active', badUntil:'excluded until', select:'Select', for:'for',
   nodesHint:'Reliability is the share of successful download checks: the active node is checked on every watchdog run, each spare node in the background once per N minutes (see Settings). Latency is refreshed on every such check. On failure reliable nodes are tried first, then fast ones.',
   listVPN:'Via VPN', listDirect:'Direct', saveApply:'Save and apply', applying:'Checking and applying…', applied:'Applied.', unsaved:'You have unsaved changes. Switch anyway?',
   listHint:'One entry per line: example.com — with subdomains, =example.com — exact, geosite:…, ext:file.dat:…, IP or subnet. A line with an https://… link adds a remote list (updated daily). Order: Direct, then groups, then Via VPN; everything else goes direct.',
@@ -390,6 +398,7 @@ function applyI18n() {
   $('lang').value = lang;
   document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = t(e.dataset.i18n));
   document.querySelectorAll('[data-i18n-ph]').forEach(e => e.placeholder = t(e.dataset.i18nPh));
+  document.querySelectorAll('[data-i18n-title]').forEach(e => e.title = t(e.dataset.i18nTitle));
   $('tabs').innerHTML = TABS.map(k => '<button class="' + (k === curTab ? 'on' : '') + '" onclick="tab(\'' + k + '\')">' + t(TABKEY[k]) + '</button>').join('');
 }
 function setLang(l) { lang = l; try { localStorage.setItem('xsub-lang', l); } catch (e) {} applyI18n(); render(); renderLists(); renderSubs(); renderFbs(); renderGroups(); }
@@ -416,6 +425,51 @@ async function act(url, key) {
   try { await post(url); setMsg('msg', 'ok', t('done')); } catch (e) { setMsg('msg', 'bad', e.message); }
   document.querySelectorAll('[data-tab="overview"] button').forEach(b => b.disabled = false);
   load();
+}
+
+// ---------- сортировка таблицы узлов ----------
+// null — порядок как в конфиге: сначала узлы подписок, потом резервы.
+let nodeSort = null;
+try { nodeSort = JSON.parse(localStorage.getItem('xsub-node-sort')) || null; } catch (e) {}
+
+const SORT_KEY = {
+  name: n => (n.name || '').toLowerCase(),
+  lat:  n => n.latency_ms,
+  rel:  n => (n.stats || {}).score,
+};
+// Узлы без данных всегда внизу, в какую бы сторону ни сортировали: иначе при
+// обратном порядке наверх всплывают непроверенные, а это самое бесполезное.
+const SORT_MISSING = {
+  name: () => false,
+  lat:  n => !(n.latency_ms > 0),
+  rel:  n => { const st = n.stats || {}; return !((st.ok || 0) + (st.fail || 0)); },
+};
+// По надёжности осмысленно начинать с лучших, по остальным — с меньшего.
+const SORT_DESC_FIRST = {name: false, lat: false, rel: true};
+
+function sortBy(by) {
+  if (!nodeSort || nodeSort.by !== by) nodeSort = {by: by, desc: SORT_DESC_FIRST[by]};
+  else if (nodeSort.desc === SORT_DESC_FIRST[by]) nodeSort = {by: by, desc: !nodeSort.desc};
+  else nodeSort = null; // третий щелчок возвращает порядок как в конфиге
+  try { localStorage.setItem('xsub-node-sort', JSON.stringify(nodeSort)); } catch (e) {}
+  render();
+}
+
+function sortNodes(list) {
+  if (!nodeSort || !SORT_KEY[nodeSort.by]) return list;
+  const key = SORT_KEY[nodeSort.by], miss = SORT_MISSING[nodeSort.by], sign = nodeSort.desc ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    const am = miss(a), bm = miss(b);
+    if (am !== bm) return am ? 1 : -1;
+    if (am) return 0;
+    const x = key(a), y = key(b);
+    return x < y ? -sign : x > y ? sign : 0;
+  });
+}
+
+function renderSortArrows() {
+  const ids = {name: 'arrName', lat: 'arrLat', rel: 'arrRel'};
+  for (const k in ids) $(ids[k]).textContent = nodeSort && nodeSort.by === k ? (nodeSort.desc ? '▼' : '▲') : '';
 }
 
 function strip(slots) {
@@ -463,7 +517,8 @@ function render() {
   // узлы
   const now = Date.now();
   const tgName = tg => tg.id ? tg.name : t('mainTarget');
-  $('nodes').innerHTML = (s.nodes || []).concat(s.fallbacks || []).map(n => {
+  renderSortArrows();
+  $('nodes').innerHTML = sortNodes((s.nodes || []).concat(s.fallbacks || [])).map(n => {
     const activeIn = ts.filter(tg => tg.active === n.tag);
     const avail = ts.filter(tg => n.fallback || !tg.tags || tg.tags.includes(n.tag));
     const bad = n.bad_until && new Date(n.bad_until).getTime() > now;
