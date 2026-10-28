@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -9,9 +10,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +32,15 @@ type Node struct {
 
 // fetchURL качает ссылку: сначала напрямую, при неудаче — через VPN (локальный probe-вход Xray).
 func fetchURL(c *Config, u, ua string, limit int64) ([]byte, http.Header, error) {
+	h := http.Header{}
+	if ua != "" {
+		h.Set("User-Agent", ua)
+	}
+	return fetchURLHeaders(c, u, h, limit)
+}
+
+// fetchURLHeaders — то же, что fetchURL, но с произвольными заголовками запроса.
+func fetchURLHeaders(c *Config, u string, hdr http.Header, limit int64) ([]byte, http.Header, error) {
 	try := func(proxyPort int) ([]byte, http.Header, error) {
 		tr := &http.Transport{DisableKeepAlives: true}
 		if proxyPort > 0 {
@@ -39,8 +51,8 @@ func fetchURL(c *Config, u, ua string, limit int64) ([]byte, http.Header, error)
 		if err != nil {
 			return nil, nil, err
 		}
-		if ua != "" {
-			req.Header.Set("User-Agent", ua)
+		for k, v := range hdr {
+			req.Header[k] = v
 		}
 		resp, err := cl.Do(req)
 		if err != nil {
@@ -62,6 +74,47 @@ func fetchURL(c *Config, u, ua string, limit int64) ([]byte, http.Header, error)
 		return b, h, nil
 	}
 	return nil, nil, fmt.Errorf("напрямую: %v; через VPN: %v", cleanErr(err), cleanErr(err2))
+}
+
+// subHeaders — заголовки запроса подписки. Кроме User-Agent отправляется HWID,
+// как это делают Happ, v2RayTun и др.: панели с ограничением числа устройств
+// (Remnawave, Marzban с HWID) без него отдают вместо узлов заглушки на 0.0.0.0.
+func subHeaders(c *Config, ua string) http.Header {
+	h := http.Header{}
+	if ua != "" {
+		h.Set("User-Agent", ua)
+	}
+	if id := deviceHWID(c); id != "" {
+		h.Set("X-Hwid", id)
+		h.Set("X-Device-Os", "Linux")
+		h.Set("X-Device-Model", "xsub router")
+	}
+	return h
+}
+
+var hwidMu sync.Mutex
+
+// deviceHWID — постоянный идентификатор роутера для панели подписок. Хранится в
+// файле hwid рядом с конфигом: при каждом новом значении панель считала бы роутер
+// новым устройством и упёрлась в лимит. В файл можно вписать HWID своего устройства.
+func deviceHWID(c *Config) string {
+	hwidMu.Lock()
+	defer hwidMu.Unlock()
+	p := c.path("hwid")
+	if b, err := os.ReadFile(p); err == nil {
+		if id := strings.TrimSpace(string(b)); id != "" {
+			return id
+		}
+	}
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	id := hex.EncodeToString(buf)
+	if err := os.WriteFile(p, []byte(id+"\n"), 0o600); err != nil {
+		lg.Printf("не удалось сохранить HWID: %v", err)
+	}
+	return id
 }
 
 // cleanErr убирает из ошибки адрес подписки (в нём часто секретный токен).

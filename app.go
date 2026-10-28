@@ -214,10 +214,16 @@ func (a *App) collect(fetch bool) []Node {
 		var raw []byte
 		if fetch {
 			ua := firstNonEmpty(s.UserAgent, a.c.UserAgent)
-			b, h, err := fetchURL(a.c, s.URL, ua, 8<<20)
+			b, h, err := fetchURLHeaders(a.c, s.URL, subHeaders(a.c, ua), 8<<20)
 			if err == nil {
 				if n, w := a.parseSub(s, b, sock, false); len(n) == 0 {
 					err = fmt.Errorf("в ответе нет подходящих узлов (проверьте ссылку, фильтры и user_agent)")
+					for _, x := range w {
+						if strings.HasPrefix(x, "пропущено информационных записей") {
+							err = fmt.Errorf("панель прислала только служебные записи вместо узлов: проверьте user_agent; если панель требует HWID — лимит устройств (HWID роутера в файле %s)", a.c.path("hwid"))
+							break
+						}
+					}
 					st.Warns = w
 				}
 			}
