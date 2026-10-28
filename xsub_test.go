@@ -300,3 +300,37 @@ func TestDecodeB64Variants(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdatePackagePick(t *testing.T) {
+	// Имена из SHA256SUMS, который делает scripts/build.sh.
+	sums := "aaa  install.sh\n" +
+		"b1b1  xsub_mipsel.ipk\n" +
+		"C2C2  xsub_aarch64.ipk\n" +
+		"d3d3  xsub-0.6.0-mipsel\n"
+	if got := sumFor(sums, "xsub_mipsel.ipk"); got != "b1b1" {
+		t.Errorf("mipsel: %q", got)
+	}
+	if got := sumFor(sums, "xsub_aarch64.ipk"); got != "c2c2" {
+		t.Errorf("регистр должен приводиться к нижнему: %q", got)
+	}
+	if got := sumFor(sums, "xsub_armv7.ipk"); got != "" {
+		t.Errorf("отсутствующий файл: %q", got)
+	}
+	// Голое имя не должно совпасть с похожим: ищем точное совпадение.
+	if got := sumFor(sums, "mipsel.ipk"); got != "" {
+		t.Errorf("частичное совпадение недопустимо: %q", got)
+	}
+	// Имена архитектур должны совпадать с теми, что собирает scripts/build.sh.
+	want := map[string]string{"arm64": "aarch64", "mipsle": "mipsel", "mips": "mips", "arm": "armv7"}
+	for goarch, arch := range want {
+		if got := ipkArchOf(goarch); got != arch {
+			t.Errorf("%s → %q, ожидалось %q", goarch, got, arch)
+		}
+		if sumFor(sums, "xsub_"+arch+".ipk") == "" && arch != "mips" && arch != "armv7" {
+			t.Errorf("в тестовом SHA256SUMS нет пакета для %s", arch)
+		}
+	}
+	if got := ipkArchOf("amd64"); got != "" {
+		t.Errorf("для архитектуры без пакетов должно быть пусто: %q", got)
+	}
+}

@@ -67,6 +67,8 @@ curl -fsSL https://raw.githubusercontent.com/furriest/xsub/main/install.sh | XSU
 
 Пакет можно поставить и вручную: скачайте `xsub_<arch>.ipk` со страницы релизов и выполните `opkg install xsub_<arch>.ipk`.
 
+Кнопка «Обновить» в настройках xsub скачивает пакет сама — **через VPN, если GitHub недоступен напрямую**, — сверяет контрольную сумму из `SHA256SUMS` и отдаёт файл `opkg install`. Репозиторий opkg для этого не нужен: он остаётся только для ручного `opkg upgrade`, который про VPN не знает и на заблокированном канале может не достучаться до GitHub. Ход обновления виден в настройках и в `/tmp/xsub-update.log`.
+
 ## Что меняется в конфигах Xray
 
 xsub пишет два файла в папку конфигов XKeen (`/opt/etc/xray/configs`):

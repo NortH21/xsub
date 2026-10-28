@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +44,8 @@ type App struct {
 	written   [2][]byte // что xsub последний раз записал в 05_routing.json и 07_xsub.json
 	xrayGone  int       // сколько проверок подряд ядро не запущено
 	latest    string    // последняя версия на GitHub
+
+	upgrading atomic.Bool // идёт обновление: второе нажатие кнопки не нужно
 
 	// fetchMu — одно скачивание за раз (подписки, geo, внешние списки). Отдельно от opMu:
 	// сеть с таймаутами в полторы минуты не должна держать сторож. Порядок захвата
