@@ -45,6 +45,13 @@ pre{margin:0;max-height:420px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Co
 .card{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
 .card .row input{flex:1 1 200px}
 .card .row input.n{flex:1 1 140px;max-width:220px}
+/* Узлы: служебные столбцы шириной по содержимому, «Состояние» забирает весь остаток
+   и переносится в нём. Иначе длинный текст ошибки растягивал её за счёт соседей,
+   и адрес узла с «проверен: N мин назад» ломались на две строки. */
+#nodesTable td.lat,#nodesTable td.rel,#nodesTable td.btn{width:1%;white-space:nowrap}
+#nodesTable td.rel{min-width:170px}
+#nodesTable td.state{width:100%;overflow-wrap:anywhere}
+#nodesTable .addr,#nodesTable .when{white-space:nowrap}
 .strip{display:flex;gap:1px;height:14px;margin-top:6px}
 .strip i{flex:1;border-radius:2px;background:var(--none)}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;margin-left:6px}
@@ -52,7 +59,7 @@ pre{margin:0;max-height:420px;overflow:auto;font:12px/1.45 ui-monospace,Menlo,Co
 code{font:12px ui-monospace,Menlo,Consolas,monospace}
 .hide{display:none}
 #msg{min-height:1.4em;margin-top:8px}
-#nodesTable td:first-child{min-width:150px}
+#nodesTable td:first-child{min-width:240px} /* чтобы имена вроде «Швеция N1 (YouTube без рекламы)» умещались в строку */
 /* форма настроек: пары «подпись — поле», две пары в строке */
 .form{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content minmax(0,1fr);gap:10px 14px;align-items:start}
 .form .fh{grid-column:1/-1;margin:10px 0 0}
@@ -83,6 +90,10 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
   #nodesTable thead{display:none}
   #nodesTable tr{display:block;border-bottom:1px solid var(--line);padding:6px 0}
   #nodesTable td{display:block;border:0;padding:2px 6px}
+  /* столбцы идут друг под другом — ширины и запрет переносов тут только мешают */
+  #nodesTable td.lat,#nodesTable td.rel,#nodesTable td.btn,#nodesTable td.state{width:auto;white-space:normal}
+  #nodesTable td:first-child,#nodesTable td.rel{min-width:0}
+  #nodesTable .addr,#nodesTable .when{white-space:normal}
 }
 </style>
 </head>
@@ -152,7 +163,7 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
   <section>
     <h2 data-i18n="tabNodes"></h2>
     <div class="scroll"><table id="nodesTable">
-      <thead><tr><th data-i18n="thNode"></th><th data-i18n="thLat"></th><th data-i18n="thRel"></th><th data-i18n="thState"></th><th></th></tr></thead>
+      <thead><tr><th data-i18n="thNode"></th><th class="lat" data-i18n="thLat"></th><th class="rel" data-i18n="thRel"></th><th class="state" data-i18n="thState"></th><th class="btn"></th></tr></thead>
       <tbody id="nodes"></tbody>
     </table></div>
     <p class="muted" data-i18n="nodesHint"></p>
@@ -458,7 +469,7 @@ function render() {
     const st = n.stats || {};
     const tot = (st.ok || 0) + (st.fail || 0);
     const rel = tot ? '<span class="' + (st.score >= 0.9 ? 'ok' : st.score >= 0.6 ? 'warn' : 'bad') + '">' + Math.round(st.score * 100) + '%</span> <span class="muted">(' + st.ok + '/' + tot + ')</span>' + strip(st.slots) +
-      '<div class="muted">' + t('lastTest') + ': ' + ago(st.last_test) + '</div>' : '<span class="muted">·</span>';
+      '<div class="muted when">' + t('lastTest') + ': ' + ago(st.last_test) + '</div>' : '<span class="muted">·</span>';
     let state = '';
     if (bad) state += '<span class="bad">' + t('badUntil') + ' ' + new Date(n.bad_until).toLocaleTimeString(loc()) + '</span>';
     if (n.last_err) state += '<div class="muted">' + esc(n.last_err) + '</div>';
@@ -467,8 +478,8 @@ function render() {
     if (btn && choices.length) btn += '<br>';
     if (choices.length === 1) btn += '<button onclick="pick(\'' + esc(choices[0].id) + '\',\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
     else if (choices.length > 1) btn += '<select id="sel_' + esc(n.tag) + '">' + choices.map(tg => '<option value="' + esc(tg.id) + '">' + esc(tgName(tg)) + '</option>').join('') + '</select> <button onclick="pick($(\'sel_' + esc(n.tag) + '\').value,\'' + esc(n.tag) + '\')">' + t('select') + '</button>';
-    return '<tr class="' + (activeIn.length ? 'active' : '') + '"><td>' + esc(n.name) + (n.fallback ? '<span class="badge warn">' + t('fallback') + '</span>' : '') + '<div class="muted">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td>' + lat +
-      '</td><td style="min-width:150px">' + rel + '</td><td>' + state + '</td><td style="white-space:nowrap">' + btn + '</td></tr>';
+    return '<tr class="' + (activeIn.length ? 'active' : '') + '"><td>' + esc(n.name) + (n.fallback ? '<span class="badge warn">' + t('fallback') + '</span>' : '') + '<div class="muted addr">' + esc(n.proto) + ' · ' + esc(n.address) + '</div></td><td class="lat">' + lat +
+      '</td><td class="rel">' + rel + '</td><td class="state">' + state + '</td><td class="btn">' + btn + '</td></tr>';
   }).join('') || '<tr><td colspan="5" class="muted">' + t('noNodes') + '</td></tr>';
   $('log').textContent = (s.log || []).slice().reverse().join('\n');
   if (!subsDirty && !$('subs').contains(document.activeElement)) renderSubs();
