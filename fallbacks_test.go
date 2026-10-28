@@ -228,3 +228,91 @@ func TestFreshXKeenConfigs(t *testing.T) {
 }
 
 func fmt2(n int) string { return strconv.Itoa(n) }
+
+func TestInterfaceFallback(t *testing.T) {
+	tmpl := map[string]any{"mark": float64(100)}
+	n, err := fallbackNode(Fallback{Name: "Keenetic WG", Interface: "nwg0"}, tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isFallbackTag(n.Tag) {
+		t.Errorf("тег резерва: %s", n.Tag)
+	}
+	if n.Name != "Keenetic WG" || n.Proto != ifaceProto || n.Address != "nwg0" {
+		t.Errorf("%+v", n)
+	}
+	if nodeSummary(n) != "interface nwg0" {
+		t.Errorf("описание: %q", nodeSummary(n))
+	}
+	if anyStr(n.Outbound["protocol"]) != "freedom" {
+		t.Errorf("протокол: %v", n.Outbound["protocol"])
+	}
+	so := n.Outbound["streamSettings"].(map[string]any)["sockopt"].(map[string]any)
+	if so["interface"] != "nwg0" {
+		t.Errorf("нет привязки к интерфейсу: %v", so)
+	}
+	if so["mark"] != float64(100) {
+		t.Errorf("метка XKeen должна сохраняться, иначе трафик завернётся обратно: %v", so)
+	}
+	if ifaceOf(n.Outbound) != "nwg0" {
+		t.Errorf("ifaceOf: %q", ifaceOf(n.Outbound))
+	}
+
+	// Тег зависит от интерфейса и не зависит от имени и метки.
+	other, _ := fallbackNode(Fallback{Name: "другое имя", Interface: "ovpn_br0"}, nil)
+	if other.Tag == n.Tag {
+		t.Error("разные интерфейсы — разные теги")
+	}
+	same, _ := fallbackNode(Fallback{Name: "третье имя", Interface: "nwg0"}, nil)
+	if same.Tag != n.Tag {
+		t.Error("тот же интерфейс — тот же тег, иначе история проверок теряется")
+	}
+
+	for _, bad := range []string{"nwg0; rm -rf /", "интерфейс", "слишком-длинное-имя-интерфейса", ""} {
+		if _, err := fallbackNode(Fallback{Interface: bad}, nil); err == nil {
+			t.Errorf("%q не должно приниматься как интерфейс", bad)
+		}
+	}
+}
+
+func TestImportFreedomInterface(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `{"outbounds":[
+	  {"tag":"wg-keenetic","protocol":"freedom","streamSettings":{"sockopt":{"interface":"nwg0","mark":100}}},
+	  {"tag":"direct","protocol":"freedom"},
+	  {"tag":"block","protocol":"blackhole"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "10_out.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := defaultConfig()
+	c.Xray.ConfDir = dir
+
+	// freedom с привязкой переносится как резерв-интерфейс, без привязки — не предлагается.
+	out, err := prepareFallbacks(c, []Fallback{{Import: "wg-keenetic"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || out[0].Interface != "nwg0" || out[0].Outbound != nil {
+		t.Fatalf("%+v", out)
+	}
+	if out[0].Name != "wg-keenetic" {
+		t.Errorf("имя: %q", out[0].Name)
+	}
+
+	a := &App{c: c}
+	res := a.uiFallbacks()
+	cands := res["imports"].([]ImportCandidate)
+	var tags []string
+	for _, c := range cands {
+		tags = append(tags, c.Tag)
+	}
+	if strings.Join(tags, ",") != "wg-keenetic" {
+		t.Fatalf("в кандидаты должен попасть только freedom с интерфейсом: %v", tags)
+	}
+	if cands[0].Summary != "interface nwg0" {
+		t.Errorf("описание кандидата: %q", cands[0].Summary)
+	}
+	if res["interfaces"] == nil {
+		t.Error("страница ждёт список интерфейсов роутера")
+	}
+}

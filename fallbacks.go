@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -14,9 +16,13 @@ import (
 // ни один узел подписок. Задаётся ссылкой (как в подписке) или готовым outbound Xray
 // (так переносятся резервы из конфигов XKeen).
 type Fallback struct {
-	Name     string         `json:"name"`
-	Link     string         `json:"link,omitempty"`
-	Outbound map[string]any `json:"outbound,omitempty"`
+	Name string `json:"name"`
+	Link string `json:"link,omitempty"`
+	// Interface — интерфейс самого роутера (nwg0, ovpn_br0…). Трафик уходит через
+	// туннель, поднятый Keenetic OS, а не через Xray: WireGuard с обфускацией и часть
+	// других протоколов роутер тянет лучше, чем ядро.
+	Interface string         `json:"interface,omitempty"`
+	Outbound  map[string]any `json:"outbound,omitempty"`
 	// Import — тег outbound из конфигов Xray, который нужно перенести сюда (только при сохранении со страницы).
 	Import string `json:"import,omitempty"`
 }
@@ -28,6 +34,75 @@ const (
 )
 
 func isFallbackTag(tag string) bool { return strings.HasPrefix(tag, fbPrefix) }
+
+// ifaceProto — что показывается в столбце протокола у резерва через интерфейс.
+const ifaceProto = "interface"
+
+// IFNAMSIZ в ядре — 16 байт вместе с нулём.
+var ifaceRe = regexp.MustCompile(`^[A-Za-z0-9._:@-]{1,15}$`)
+
+// interfaceNode собирает резерв через интерфейс роутера: outbound freedom, привязанный
+// к интерфейсу через sockopt.interface (SO_BINDTODEVICE).
+func interfaceNode(iface string, sockopt any) Node {
+	so := map[string]any{}
+	// Метка XKeen из шаблона: без неё исходящий трафик ядра завернётся обратно в Xray.
+	if tmpl, ok := sockopt.(map[string]any); ok {
+		for k, v := range tmpl {
+			so[k] = v
+		}
+	}
+	so["interface"] = iface
+	h := sha1.Sum([]byte("iface|" + iface))
+	tag := fbPrefix + hex.EncodeToString(h[:])[:8]
+	return Node{
+		Tag: tag, Name: iface, Proto: ifaceProto, Address: iface,
+		Outbound: map[string]any{
+			"tag":            tag,
+			"protocol":       "freedom",
+			"streamSettings": map[string]any{"sockopt": so},
+		},
+	}
+}
+
+// ifaceOf — к какому интерфейсу привязан готовый outbound (пусто, если ни к какому).
+func ifaceOf(ob map[string]any) string {
+	ss, _ := ob["streamSettings"].(map[string]any)
+	so, _ := ss["sockopt"].(map[string]any)
+	return anyStr(so["interface"])
+}
+
+// IfaceInfo — интерфейс роутера для выпадающего списка на странице.
+type IfaceInfo struct {
+	Name string `json:"name"`
+	Addr string `json:"addr,omitempty"`
+	Up   bool   `json:"up"`
+}
+
+// routerInterfaces — сетевые интерфейсы роутера, кроме петлевого.
+func routerInterfaces() []IfaceInfo {
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []IfaceInfo
+	for _, i := range ifs {
+		if i.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		info := IfaceInfo{Name: i.Name, Up: i.Flags&net.FlagUp != 0}
+		if addrs, err := i.Addrs(); err == nil {
+			for _, a := range addrs {
+				if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
+					info.Addr = ipn.IP.String()
+					break
+				}
+			}
+		}
+		out = append(out, info)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
 
 func loadFallbacks(c *Config) ([]Fallback, error) {
 	b, err := os.ReadFile(c.path(fallbacksFile))
@@ -60,6 +135,13 @@ func fallbackNode(f Fallback, sockopt any) (Node, error) {
 	var n Node
 	var err error
 	switch {
+	case strings.TrimSpace(f.Interface) != "":
+		iface := strings.TrimSpace(f.Interface)
+		if !ifaceRe.MatchString(iface) {
+			err = fmt.Errorf("%q не похоже на имя интерфейса", iface)
+		} else {
+			n = interfaceNode(iface, sockopt)
+		}
 	case strings.TrimSpace(f.Link) != "":
 		n, err = parseLink(strings.TrimSpace(f.Link), sockopt)
 		if err == errInfoNode {
@@ -76,7 +158,7 @@ func fallbackNode(f Fallback, sockopt any) (Node, error) {
 			err = fmt.Errorf("в outbound нет адреса сервера")
 		}
 	default:
-		err = fmt.Errorf("нужна ссылка")
+		err = fmt.Errorf("нужна ссылка или интерфейс")
 	}
 	if err != nil {
 		return Node{}, err
@@ -132,11 +214,20 @@ func prepareFallbacks(c *Config, fbs []Fallback) ([]Fallback, error) {
 			}
 			ob := copyMap(raw)
 			delete(ob, "tag")
-			f.Outbound, f.Link = ob, ""
+			f.Outbound, f.Link, f.Interface = ob, "", ""
+			// freedom, привязанный к интерфейсу, переносим как резерв-интерфейс:
+			// так его видно и можно поправить, а не прятать в сыром outbound.
+			if anyStr(ob["protocol"]) == "freedom" {
+				f.Interface, f.Outbound = ifaceOf(ob), nil
+			}
 			if f.Name == "" {
 				f.Name = f.Import
 			}
 			f.Import = ""
+		}
+		f.Interface = strings.TrimSpace(f.Interface)
+		if f.Interface != "" {
+			f.Link, f.Outbound = "", nil
 		}
 		if f.Name == "" {
 			f.Name = fmt.Sprintf("Резерв %d", i+1)
@@ -169,6 +260,7 @@ type FallbackView struct {
 	Tag     string `json:"tag"`
 	Summary string `json:"summary"`
 	Err     string `json:"err,omitempty"`
+	Warn    string `json:"warn,omitempty"`
 }
 
 type ImportCandidate struct {
@@ -179,8 +271,11 @@ type ImportCandidate struct {
 }
 
 func nodeSummary(n Node) string {
-	if n.Address == "" {
+	switch {
+	case n.Address == "":
 		return n.Proto
+	case n.Port == 0: // резерв через интерфейс роутера: порта нет
+		return n.Proto + " " + n.Address
 	}
 	return fmt.Sprintf("%s %s:%d", n.Proto, n.Address, n.Port)
 }
@@ -188,6 +283,11 @@ func nodeSummary(n Node) string {
 // uiFallbacks — резервы для страницы и outbound'ы из конфигов Xray, которые можно перенести.
 func (a *App) uiFallbacks() map[string]any {
 	fbs, err := loadFallbacks(a.c)
+	ifaces := routerInterfaces()
+	have := map[string]bool{}
+	for _, i := range ifaces {
+		have[i.Name] = true
+	}
 	views := []FallbackView{}
 	for _, f := range fbs {
 		v := FallbackView{Fallback: f}
@@ -195,6 +295,10 @@ func (a *App) uiFallbacks() map[string]any {
 			v.Err = err.Error()
 		} else {
 			v.Tag, v.Summary = n.Tag, nodeSummary(n)
+		}
+		// Опечатка в имени интерфейса иначе обнаружилась бы только при отказе всех узлов.
+		if f.Interface != "" && v.Err == "" && !have[f.Interface] {
+			v.Warn = "такого интерфейса сейчас нет на роутере"
 		}
 		views = append(views, v)
 	}
@@ -207,11 +311,23 @@ func (a *App) uiFallbacks() map[string]any {
 	sort.Strings(tags)
 	for _, t := range tags {
 		ob := env.RawOut[t]
-		if !xrayProxyProtocols[anyStr(ob["protocol"])] || strings.HasPrefix(t, "node-") || isFallbackTag(t) || strings.HasPrefix(t, "xsub-") {
+		if strings.HasPrefix(t, "node-") || isFallbackTag(t) || strings.HasPrefix(t, "xsub-") {
+			continue
+		}
+		// freedom подходит в резерв, только если привязан к интерфейсу: без привязки
+		// это обычное прямое соединение, и трафик пошёл бы мимо VPN незаметно для хозяина.
+		proto := anyStr(ob["protocol"])
+		if proto == "freedom" {
+			if ifaceOf(ob) == "" {
+				continue
+			}
+		} else if !xrayProxyProtocols[proto] {
 			continue
 		}
 		ic := ImportCandidate{Tag: t, Legacy: t == a.c.Xray.FallbackTag && len(fbs) == 0}
-		if n, err := outboundNode(copyMap(ob), t, nil, fbPrefix); err == nil {
+		if proto == "freedom" {
+			ic.Summary = nodeSummary(interfaceNode(ifaceOf(ob), nil))
+		} else if n, err := outboundNode(copyMap(ob), t, nil, fbPrefix); err == nil {
 			ic.Summary = nodeSummary(n)
 		} else {
 			ic.Summary = err.Error()
@@ -220,10 +336,13 @@ func (a *App) uiFallbacks() map[string]any {
 			if f.Outbound != nil && sameOutbound(f.Outbound, ob) {
 				ic.Imported = true
 			}
+			if proto == "freedom" && f.Interface != "" && f.Interface == ifaceOf(ob) {
+				ic.Imported = true
+			}
 		}
 		cands = append(cands, ic)
 	}
-	res := map[string]any{"fallbacks": views, "imports": cands}
+	res := map[string]any{"fallbacks": views, "imports": cands, "interfaces": ifaces}
 	if err != nil {
 		res["error"] = err.Error()
 	}

@@ -117,7 +117,7 @@ func (w *Watcher) setNodesLocked(nodes, fbs []Node, defs []TargetDef) []string {
 			if w.seeded {
 				// Тег считается по адресу, порту, SNI и транспорту: панель перенесла узел
 				// на другой хост — для сторожа это новый узел с пустой историей.
-				fresh = append(fresh, fmt.Sprintf("новый узел «%s» (%s · %s:%d) — история проверок начата заново", n.Name, n.Proto, n.Address, n.Port))
+				fresh = append(fresh, fmt.Sprintf("новый узел «%s» (%s) — история проверок начата заново", n.Name, nodeSummary(n)))
 			}
 		}
 		w.stats[n.Tag].Seen = now
