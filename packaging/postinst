@@ -20,6 +20,20 @@ if [ ! -x /opt/sbin/xray ]; then
   echo "xsub: не найден /opt/sbin/xray — установите XKeen с ядром Xray (xkeen -xray)."
 fi
 
+# Пакеты объявлены как "Architecture: all", поэтому opkg не мешает поставить сборку
+# для чужой архитектуры: файл встанет, а запускаться не будет. Проверяем сразу,
+# пока это видно в выводе установки, а не через неделю по неработающему сторожу.
+VER=$(/opt/sbin/xsub -version 2>/dev/null)
+if [ -z "$VER" ]; then
+  echo
+  echo "xsub: установленный /opt/sbin/xsub не запускается на этом роутере."
+  echo "      Скорее всего, пакет собран для другой архитектуры (здесь $(uname -m))."
+  echo "      Поставьте подходящий — install.sh определит её сам:"
+  echo "        curl -fsSL https://raw.githubusercontent.com/OWNER/xsub/main/install.sh | sh"
+  echo
+  exit 0
+fi
+
 # Присмотр за процессом: на роутере xsub некому поднять, если он всё-таки упадёт.
 # Раз в пять минут cron проверяет и запускает заново. Нет cron — шаг пропускается.
 if command -v crond >/dev/null 2>&1; then
@@ -45,6 +59,6 @@ if [ "$FIRST" = 1 ]; then
   echo "  Откройте страницу и добавьте ссылку на подписку."
   rm -f /tmp/xsub-init.txt
 else
-  echo "xsub обновлён: $(/opt/sbin/xsub -version). Веб-страница: http://$IP:8099/"
+  echo "xsub обновлён: $VER. Веб-страница: http://$IP:8099/"
 fi
 exit 0

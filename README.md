@@ -65,7 +65,16 @@ curl -fsSL https://raw.githubusercontent.com/furriest/xsub/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/furriest/xsub/main/install.sh | XSUB_FEED=1 sh
 ```
 
-Пакет можно поставить и вручную: скачайте `xsub_<arch>.ipk` со страницы релизов и выполните `opkg install xsub_<arch>.ipk`.
+Пакет можно поставить и вручную, но архитектуру нужно взять свою: все пакеты объявлены как `Architecture: all`, поэтому `opkg` не помешает поставить чужую сборку — файл встанет, а запускаться не будет (установка в этом случае сразу об этом скажет).
+
+```sh
+case "$(uname -m)" in
+  aarch64|arm64) A=aarch64 ;;
+  armv*)         A=armv7 ;;
+  mips*)         opkg print-architecture | grep -q mipsel && A=mipsel || A=mips ;;
+esac
+opkg install "https://github.com/furriest/xsub/releases/latest/download/xsub_$A.ipk"
+```
 
 Кнопка «Обновить» в настройках xsub скачивает пакет сама — **через VPN, если GitHub недоступен напрямую**, — сверяет контрольную сумму из `SHA256SUMS` и отдаёт файл `opkg install`. Репозиторий opkg для этого не нужен: он остаётся только для ручного `opkg upgrade`, который про VPN не знает и на заблокированном канале может не достучаться до GitHub. Ход обновления виден в настройках и в `/tmp/xsub-update.log`.
 

@@ -56,7 +56,9 @@ Installed-Size: $size
 Maintainer: xsub
 Description: $DESC
 EOF
-  install -m 0755 packaging/postinst "$work/control/postinst"
+  # В postinst есть ссылка на репозиторий — подставляем так же, как в install.sh.
+  sed "s#OWNER/xsub#$REPO#g" packaging/postinst > "$work/control/postinst"
+  chmod 0755 "$work/control/postinst"
   install -m 0755 packaging/prerm "$work/control/prerm"
 
   tar_opts=(--format=gnu --numeric-owner --owner=0 --group=0 --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}")
