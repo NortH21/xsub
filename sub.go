@@ -76,33 +76,41 @@ func fetchURLHeaders(c *Config, u string, hdr http.Header, limit int64) ([]byte,
 	return nil, nil, fmt.Errorf("напрямую: %v; через VPN: %v", cleanErr(err), cleanErr(err2))
 }
 
-// subHeaders — заголовки запроса подписки. Кроме User-Agent отправляется HWID,
-// как это делают Happ, v2RayTun и др.: панели с ограничением числа устройств
-// (Remnawave, Marzban с HWID) без него отдают вместо узлов заглушки на 0.0.0.0.
-func subHeaders(c *Config, ua string) http.Header {
+// subHeaders — заголовки запроса подписки. hwid отправляется, как это делают
+// Happ, v2RayTun и др.: панели с лимитом устройств (Remnawave и др.) без него
+// отдают вместо узлов заглушки на 0.0.0.0. Пустой hwid — без него.
+func subHeaders(ua, hwid string) http.Header {
 	h := http.Header{}
 	if ua != "" {
 		h.Set("User-Agent", ua)
 	}
-	if id := deviceHWID(c); id != "" {
-		h.Set("X-Hwid", id)
+	if hwid != "" {
+		h.Set("X-Hwid", hwid)
 		h.Set("X-Device-Os", "Linux")
 		h.Set("X-Device-Model", "xsub router")
 	}
 	return h
 }
 
-var hwidMu sync.Mutex
+var (
+	hwidMu    sync.Mutex
+	hwidCache string
+)
 
 // deviceHWID — постоянный идентификатор роутера для панели подписок. Хранится в
-// файле hwid рядом с конфигом: при каждом новом значении панель считала бы роутер
-// новым устройством и упёрлась в лимит. В файл можно вписать HWID своего устройства.
+// файле hwid рядом с конфигом (и в памяти — на случай, если файл не записать):
+// при каждом новом значении панель считала бы роутер новым устройством.
+// В файл можно вписать HWID своего устройства.
 func deviceHWID(c *Config) string {
 	hwidMu.Lock()
 	defer hwidMu.Unlock()
+	if hwidCache != "" {
+		return hwidCache
+	}
 	p := c.path("hwid")
 	if b, err := os.ReadFile(p); err == nil {
 		if id := strings.TrimSpace(string(b)); id != "" {
+			hwidCache = id
 			return id
 		}
 	}
@@ -110,11 +118,11 @@ func deviceHWID(c *Config) string {
 	if _, err := rand.Read(buf); err != nil {
 		return ""
 	}
-	id := hex.EncodeToString(buf)
-	if err := os.WriteFile(p, []byte(id+"\n"), 0o600); err != nil {
+	hwidCache = hex.EncodeToString(buf)
+	if err := os.WriteFile(p, []byte(hwidCache+"\n"), 0o600); err != nil {
 		lg.Printf("не удалось сохранить HWID: %v", err)
 	}
-	return id
+	return hwidCache
 }
 
 // cleanErr убирает из ошибки адрес подписки (в нём часто секретный токен).

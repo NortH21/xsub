@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,6 +78,29 @@ func subKey(u string) string {
 }
 
 func (a *App) cachePath(u string) string { return a.c.path(filepath.Join("cache", subKey(u)+".txt")) }
+
+// fetchSub качает и разбирает подписку. HWID отправляется, только если без него
+// узлов нет: иначе роутер зря занимал бы место в лимите устройств у панелей,
+// которые пускают и без HWID.
+func (a *App) fetchSub(s Subscription, ua string, sock any) ([]byte, http.Header, []Node, []string, error) {
+	b, h, err := fetchURLHeaders(a.c, s.URL, subHeaders(ua, ""), 8<<20)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	n, w := a.parseSub(s, b, sock, false)
+	if len(n) > 0 {
+		return b, h, n, w, nil
+	}
+	if id := deviceHWID(a.c); id != "" {
+		if b2, h2, err2 := fetchURLHeaders(a.c, s.URL, subHeaders(ua, id), 8<<20); err2 == nil {
+			if n2, w2 := a.parseSub(s, b2, sock, false); len(n2) > 0 {
+				lg.Printf("подписка «%s»: панель выдаёт узлы только с HWID — отправлен HWID роутера", s.Name)
+				return b2, h2, n2, w2, nil
+			}
+		}
+	}
+	return b, h, n, w, nil
+}
 
 func (a *App) parseSub(s Subscription, raw []byte, sockopt any, multi bool) ([]Node, []string) {
 	o := parseOpts{sub: s.Name, sockopt: sockopt, maxNodes: a.c.MaxNodes}
@@ -214,13 +238,13 @@ func (a *App) collect(fetch bool) []Node {
 		var raw []byte
 		if fetch {
 			ua := firstNonEmpty(s.UserAgent, a.c.UserAgent)
-			b, h, err := fetchURLHeaders(a.c, s.URL, subHeaders(a.c, ua), 8<<20)
+			b, h, n, w, err := a.fetchSub(s, ua, sock)
 			if err == nil {
-				if n, w := a.parseSub(s, b, sock, false); len(n) == 0 {
+				if len(n) == 0 {
 					err = fmt.Errorf("в ответе нет подходящих узлов (проверьте ссылку, фильтры и user_agent)")
 					for _, x := range w {
 						if strings.HasPrefix(x, "пропущено информационных записей") {
-							err = fmt.Errorf("панель прислала только служебные записи вместо узлов: проверьте user_agent; если панель требует HWID — лимит устройств (HWID роутера в файле %s)", a.c.path("hwid"))
+							err = fmt.Errorf("панель прислала только служебные записи вместо узлов: проверьте user_agent; с HWID тоже не вышло — возможно, исчерпан лимит устройств (HWID роутера в файле %s)", a.c.path("hwid"))
 							break
 						}
 					}
