@@ -172,7 +172,6 @@ code{font:12px ui-monospace,Menlo,Consolas,monospace}
     <datalist id="ifaceList"></datalist>
     <div class="row" style="margin-top:8px">
       <button data-i18n="addFb" onclick="addFb()"></button>
-      <button data-i18n="addFbSub" onclick="addFbSub()"></button>
       <button data-i18n="addFbIface" onclick="addFbIface()"></button>
       <button class="primary" id="fbsave" data-i18n="saveFb" onclick="saveFbs(null, true)"></button>
       <button data-i18n="saveOnly" onclick="saveFbs(null, false)"></button>
@@ -337,7 +336,7 @@ ru: {
   phName:'Название', phUrl:'https://… ссылка на подписку', phEx:'Исключить узлы (регулярное выражение)', phIn:'Только узлы (необязательно)', phUA:'User-Agent (необяз.)',
   forceHwid:'Всегда отправлять HWID', hwidHelpLabel:'Подробнее об отправке HWID', hwidHelp:'Если включено, HWID отправляется сразу. Если выключено, он всё равно может быть отправлен автоматически при повторном запросе, когда сервер ответил, но не вернул подходящие узлы. Провайдер может учитывать устройство в своём лимите.',
   fbTitle:'Резервные узлы', fbHint:'Включаются, только когда не работает ни один узел подписок; раз в 10 минут xsub пробует вернуться на подписку. Порядок — приоритет. Подходят те же ссылки, что и в подписках (vless://, socks://, http:// и др.), а также интерфейс самого роутера: трафик уйдёт через туннель Keenetic OS, минуя Xray.',
-  addFb:'+ Добавить резерв', addFbSub:'+ Резервная подписка', forceHWID:'Всегда отправлять HWID', addFbIface:'+ Интерфейс роутера', saveFb:'Сохранить резервы', phFbLink:'ссылка: vless://…, socks://user:pass@host:port, …', phFbIface:'интерфейс роутера: nwg0, ovpn_br0…', fbOutbound:'outbound из конфигов Xray', fbIfaceDown:'не поднят', noFbs:'Резервов нет.',
+  addFb:'+ Добавить резерв', fbTypeNode:'Отдельный узел', fbTypeSub:'Подписка', forceHWID:'Всегда отправлять HWID', addFbIface:'+ Интерфейс роутера', saveFb:'Сохранить резервы', phFbLink:'ссылка: vless://…, socks://user:pass@host:port, …', phFbIface:'интерфейс роутера: nwg0, ovpn_br0…', fbOutbound:'outbound из конфигов Xray', fbIfaceDown:'не поднят', noFbs:'Резервов нет.',
   fbImportTitle:'Перенести из конфигов Xray', fbImportHint:'Outbound скопируется в xsub; исходный файл XKeen не меняется — после переноса его можно удалить оттуда.', fbImported:'уже перенесён', fbLegacy:'сейчас запасной', fbImportBtn:'Перенести',
   fallback:'резерв', up:'Выше', downBtn:'Ниже', fbOnline:'работает', fbOffline:'не отвечает',
   del:'Удалить', nodesN:'узлов', updated:'обновлена', cached:'сохранённая копия', traffic:'трафик', gb:'ГБ', until:'до', of:'из', notYet:'ещё не обновлялась', noSubs:'Подписок пока нет — добавьте ссылку.',
@@ -375,7 +374,7 @@ en: {
   phName:'Name', phUrl:'https://… subscription link', phEx:'Exclude nodes (regular expression)', phIn:'Only nodes (optional)', phUA:'User-Agent (optional)',
   forceHwid:'Always send HWID', hwidHelpLabel:'About sending HWID', hwidHelp:'When enabled, HWID is sent immediately. When disabled, it may still be sent automatically on a retry if the server responds without suitable nodes. The provider may count this device against its limit.',
   fbTitle:'Fallback nodes', fbHint:'Used only when no subscription node works; every 10 minutes xsub tries to switch back to the subscription. Order is priority. Same links as in subscriptions (vless://, socks://, http:// etc.), or a router interface: traffic then leaves through a Keenetic OS tunnel, bypassing Xray.',
-  addFb:'+ Add fallback', addFbSub:'+ Fallback subscription', forceHWID:'Always send HWID', addFbIface:'+ Router interface', saveFb:'Save fallbacks', phFbLink:'link: vless://…, socks://user:pass@host:port, …', phFbIface:'router interface: nwg0, ovpn_br0…', fbOutbound:'outbound from Xray configs', fbIfaceDown:'down', noFbs:'No fallbacks.',
+  addFb:'+ Add fallback', fbTypeNode:'Single node', fbTypeSub:'Subscription', forceHWID:'Always send HWID', addFbIface:'+ Router interface', saveFb:'Save fallbacks', phFbLink:'link: vless://…, socks://user:pass@host:port, …', phFbIface:'router interface: nwg0, ovpn_br0…', fbOutbound:'outbound from Xray configs', fbIfaceDown:'down', noFbs:'No fallbacks.',
   fbImportTitle:'Move from Xray configs', fbImportHint:'The outbound is copied into xsub; the XKeen file is not changed — you can delete it there afterwards.', fbImported:'already moved', fbLegacy:'current fallback', fbImportBtn:'Move',
   fallback:'fallback', up:'Up', downBtn:'Down', fbOnline:'working', fbOffline:'not responding',
   del:'Delete', nodesN:'nodes', updated:'updated', cached:'saved copy', traffic:'traffic', gb:'GB', until:'until', of:'of', notYet:'not updated yet', noSubs:'No subscriptions yet — add a link.',
@@ -754,6 +753,7 @@ function fbStats(f) {
 function renderFbs() {
   $('fbs').innerHTML = fbs.map((f, i) => {
     const nm = '<input class="n" placeholder="' + esc(t('phName')) + '" value="' + esc(f.name || '') + '" oninput="fbs[' + i + '].name=this.value">';
+    const typeSelect = !f.outbound && !f.isIface ? '<select aria-label="' + esc(t('fbTypeNode')) + ' / ' + esc(t('fbTypeSub')) + '" onchange="setFbType(' + i + ',this.value)"><option value="node"' + (!f.isSub ? ' selected' : '') + '>' + esc(t('fbTypeNode')) + '</option><option value="sub"' + (f.isSub ? ' selected' : '') + '>' + esc(t('fbTypeSub')) + '</option></select>' : '';
     const body = f.outbound ? '<span class="grow muted">' + esc(t('fbOutbound')) + (f.summary ? ': ' + esc(f.summary) : '') + '</span>'
       : f.isSub
       ? '<input autocomplete="off" spellcheck="false" placeholder="' + esc(t('phUrl')) + '" value="' + esc(f.url || '') + '" oninput="fbs[' + i + '].url=this.value">'
@@ -761,7 +761,7 @@ function renderFbs() {
       ? '<input list="ifaceList" autocomplete="off" spellcheck="false" placeholder="' + esc(t('phFbIface')) + '" value="' + esc(f.iface || '') + '" oninput="fbs[' + i + '].iface=this.value">'
       : '<input autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="' + esc(t('phFbLink')) + '" value="' + esc(f.link || '') + '" oninput="fbs[' + i + '].link=this.value">';
     const mv = (d, k) => '<button ' + ((i + d < 0 || i + d >= fbs.length) ? 'disabled ' : '') + 'onclick="moveFb(' + i + ',' + d + ')" title="' + esc(t(k)) + '">' + (d < 0 ? '↑' : '↓') + '</button>';
-    return '<div class="card"><div class="row"><span class="muted">' + (i + 1) + '.</span>' + nm + body + mv(-1, 'up') + mv(1, 'downBtn') +
+    return '<div class="card"><div class="row"><span class="muted">' + (i + 1) + '.</span>' + nm + typeSelect + body + mv(-1, 'up') + mv(1, 'downBtn') +
       '<button onclick="fbs.splice(' + i + ',1);renderFbs()">' + t('del') + '</button></div>' +
       (f.isSub ? '<div class="row" style="margin-top:6px">' + ['exclude','include','user_agent'].map((k, j) => '<input placeholder="' + esc(t(['phEx','phIn','phUA'][j])) + '" value="' + esc(f[k] || '') + '" oninput="fbs[' + i + '].' + k + '=this.value">').join('') + '<label class="check"><input type="checkbox" ' + (f.force_hwid ? 'checked ' : '') + 'onchange="fbs[' + i + '].force_hwid=this.checked"> ' + esc(t('forceHWID')) + '</label></div>' : '') +
       '<div id="fbstate' + i + '" style="margin-top:6px">' + fbState(f) + '</div></div>';
@@ -774,11 +774,17 @@ function renderFbs() {
 }
 function moveFb(i, d) { const x = fbs[i]; fbs[i] = fbs[i + d]; fbs[i + d] = x; renderFbs(); }
 function addFb() { fbs.push({name: '', link: ''}); renderFbs(); }
-function addFbSub() { fbs.push({name: '', url: '', isSub: true}); renderFbs(); }
+function setFbType(i, type) {
+  const f = fbs[i];
+  if (type === 'sub' && !f.url) f.url = f.link || '';
+  if (type === 'node' && !f.link) f.link = f.url || '';
+  f.isSub = type === 'sub'; f.err = ''; f.warn = ''; f.state = null;
+  renderFbs();
+}
 function addFbIface() { fbs.push({name: '', link: '', iface: '', isIface: true}); renderFbs(); }
 function importFb(tag) { saveFbs(fbs.concat([{name: tag, import: tag}]), true); }
 async function saveFbs(list, apply) {
-  list = (list || fbs).filter(f => f.import || f.outbound || (f.iface || '').trim() !== '' || (f.link || '').trim() !== '' || (f.url || '').trim() !== '')
+  list = (list || fbs).filter(f => f.import || f.outbound || (f.isIface ? (f.iface || '').trim() !== '' : f.isSub ? (f.url || '').trim() !== '' : (f.link || '').trim() !== ''))
     .map(f => f.import ? {name: f.name, import: f.import}
       : f.outbound ? {name: f.name, outbound: f.outbound}
       : f.isSub ? {name: f.name, url: f.url.trim(), exclude: f.exclude || '', include: f.include || '', user_agent: f.user_agent || '', force_hwid: !!f.force_hwid}
