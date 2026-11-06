@@ -1,23 +1,32 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Fallback — резервный узел, которым управляет xsub. Включается, когда не работает
 // ни один узел подписок. Задаётся ссылкой (как в подписке) или готовым outbound Xray
 // (так переносятся резервы из конфигов XKeen).
 type Fallback struct {
-	Name string `json:"name"`
-	Link string `json:"link,omitempty"`
+	Name      string `json:"name"`
+	Link      string `json:"link,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Exclude   string `json:"exclude,omitempty"`
+	Include   string `json:"include,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
+	ForceHWID bool   `json:"force_hwid,omitempty"`
 	// Interface — интерфейс самого роутера (nwg0, ovpn_br0…). Трафик уходит через
 	// туннель, поднятый Keenetic OS, а не через Xray: WireGuard с обфускацией и часть
 	// других протоколов роутер тянет лучше, чем ядро.
@@ -170,6 +179,78 @@ func fallbackNode(f Fallback, sockopt any) (Node, error) {
 	return n, nil
 }
 
+// fallbackSubscriptionNodes разбирает сохранённую копию, не обращаясь к сети.
+func fallbackSubscriptionNodes(c *Config, f Fallback, sockopt any) ([]Node, error) {
+	b, err := os.ReadFile(fallbackCachePath(c, f.URL))
+	if err != nil {
+		return nil, err
+	}
+	a := &App{c: c}
+	nodes, _ := a.parseSub(Subscription{Name: f.Name, URL: f.URL, Exclude: f.Exclude, Include: f.Include}, b, sockopt, false)
+	for i := range nodes {
+		h := sha1.Sum([]byte(f.URL + "|" + nodes[i].Tag))
+		nodes[i].Tag = fbPrefix + hex.EncodeToString(h[:])[:12]
+		nodes[i].Outbound["tag"] = nodes[i].Tag
+		nodes[i].Name = f.Name + " · " + nodes[i].Name
+		nodes[i].Sub = "резерв"
+	}
+	return nodes, nil
+}
+
+func fallbackCachePath(c *Config, u string) string {
+	return c.path(filepath.Join("cache", "fallback-"+subKey(u)+".txt"))
+}
+
+// refreshFallbackSubscriptions выполняется вне opMu, как обновление обычных подписок.
+func (a *App) refreshFallbackSubscriptions(ctx context.Context) bool {
+	fbs, err := loadFallbacks(a.c)
+	if err != nil {
+		return true
+	}
+	failed := false
+	states := map[string]*SubState{}
+	for _, f := range fbs {
+		if f.URL == "" {
+			continue
+		}
+		s := Subscription{Name: f.Name, URL: f.URL, Exclude: f.Exclude, Include: f.Include, UserAgent: f.UserAgent, ForceHWID: f.ForceHWID}
+		ua := firstNonEmpty(f.UserAgent, a.c.UserAgent)
+		b, headers, nodes, warns, _, fetchErr := a.fetchSub(ctx, s, ua, nil, false)
+		st := &SubState{Name: f.Name, Warns: warns, Info: parseUserInfo(headers)}
+		if fetchErr == nil && len(nodes) == 0 {
+			fetchErr = fmt.Errorf("в ответе нет подходящих узлов (проверьте ссылку, фильтры и user_agent)")
+		}
+		if fetchErr == nil {
+			if err := os.MkdirAll(a.c.path("cache"), 0700); err != nil {
+				fetchErr = err
+			} else if old, err := os.ReadFile(fallbackCachePath(a.c, f.URL)); err != nil || !bytes.Equal(old, b) {
+				fetchErr = writeAtomicMode(fallbackCachePath(a.c, f.URL), b, 0600)
+			}
+		}
+		if fetchErr != nil {
+			failed = true
+			st.Err = cleanErr(fetchErr)
+			lg.Printf("резервная подписка «%s» не обновлена: %s", f.Name, st.Err)
+		} else {
+			st.At = time.Now()
+		}
+		if cached, err := fallbackSubscriptionNodes(a.c, f, nil); err == nil {
+			st.Nodes = len(cached)
+			st.Cached = fetchErr != nil
+			if st.At.IsZero() {
+				if fi, err := os.Stat(fallbackCachePath(a.c, f.URL)); err == nil {
+					st.At = fi.ModTime()
+				}
+			}
+		}
+		states[f.URL] = st
+	}
+	a.mu.Lock()
+	a.fallbackStates = states
+	a.mu.Unlock()
+	return failed
+}
+
 // fallbackNodes — все резервы в порядке приоритета; неразобранные пропускаются с предупреждением.
 func fallbackNodes(c *Config, sockopt any) ([]Node, []string) {
 	fbs, err := loadFallbacks(c)
@@ -180,6 +261,20 @@ func fallbackNodes(c *Config, sockopt any) ([]Node, []string) {
 	var warns []string
 	seen := map[string]bool{}
 	for i, f := range fbs {
+		if f.URL != "" {
+			ns, err := fallbackSubscriptionNodes(c, f, sockopt)
+			if err != nil {
+				warns = append(warns, fmt.Sprintf("резервная подписка «%s»: нет сохранённой копии", f.Name))
+				continue
+			}
+			for _, n := range ns {
+				if !seen[n.Tag] {
+					seen[n.Tag] = true
+					nodes = append(nodes, n)
+				}
+			}
+			continue
+		}
 		n, err := fallbackNode(f, sockopt)
 		if err != nil {
 			warns = append(warns, fmt.Sprintf("резерв «%s»: %v", firstNonEmpty(f.Name, fmt.Sprint(i+1)), err))
@@ -204,9 +299,11 @@ func prepareFallbacks(c *Config, fbs []Fallback) ([]Fallback, error) {
 		return nil, err
 	}
 	out := make([]Fallback, 0, len(fbs))
+	seenURLs := map[string]bool{}
 	for i, f := range fbs {
 		f.Name = strings.TrimSpace(f.Name)
 		f.Link = strings.TrimSpace(f.Link)
+		f.URL = strings.TrimSpace(f.URL)
 		if f.Import != "" {
 			raw, ok := env.RawOut[f.Import]
 			if !ok {
@@ -214,7 +311,7 @@ func prepareFallbacks(c *Config, fbs []Fallback) ([]Fallback, error) {
 			}
 			ob := copyMap(raw)
 			delete(ob, "tag")
-			f.Outbound, f.Link, f.Interface = ob, "", ""
+			f.Outbound, f.Link, f.Interface, f.URL = ob, "", "", ""
 			// freedom, привязанный к интерфейсу, переносим как резерв-интерфейс:
 			// так его видно и можно поправить, а не прятать в сыром outbound.
 			if anyStr(ob["protocol"]) == "freedom" {
@@ -227,12 +324,23 @@ func prepareFallbacks(c *Config, fbs []Fallback) ([]Fallback, error) {
 		}
 		f.Interface = strings.TrimSpace(f.Interface)
 		if f.Interface != "" {
-			f.Link, f.Outbound = "", nil
+			f.Link, f.Outbound, f.URL = "", nil, ""
 		}
 		if f.Name == "" {
 			f.Name = fmt.Sprintf("Резерв %d", i+1)
 		}
-		if _, err := fallbackNode(f, nil); err != nil {
+		if f.URL != "" {
+			if seenURLs[f.URL] {
+				return nil, fmt.Errorf("резерв «%s»: такая ссылка подписки уже есть", f.Name)
+			}
+			seenURLs[f.URL] = true
+			if f.Link != "" || f.Outbound != nil {
+				return nil, fmt.Errorf("резерв «%s»: укажите только один источник", f.Name)
+			}
+			if err := validateSubs([]Subscription{{Name: f.Name, URL: f.URL, Exclude: f.Exclude, Include: f.Include}}); err != nil {
+				return nil, err
+			}
+		} else if _, err := fallbackNode(f, nil); err != nil {
 			return nil, fmt.Errorf("резерв «%s»: %v", f.Name, err)
 		}
 		out = append(out, f)
@@ -257,10 +365,11 @@ func sameOutbound(a, b map[string]any) bool {
 
 type FallbackView struct {
 	Fallback
-	Tag     string `json:"tag"`
-	Summary string `json:"summary"`
-	Err     string `json:"err,omitempty"`
-	Warn    string `json:"warn,omitempty"`
+	Tag     string    `json:"tag"`
+	Summary string    `json:"summary"`
+	Err     string    `json:"err,omitempty"`
+	Warn    string    `json:"warn,omitempty"`
+	State   *SubState `json:"state,omitempty"`
 }
 
 type ImportCandidate struct {
@@ -291,7 +400,16 @@ func (a *App) uiFallbacks() map[string]any {
 	views := []FallbackView{}
 	for _, f := range fbs {
 		v := FallbackView{Fallback: f}
-		if n, err := fallbackNode(f, nil); err != nil {
+		if f.URL != "" {
+			a.mu.Lock()
+			v.State = a.fallbackStates[f.URL]
+			a.mu.Unlock()
+			if v.State == nil {
+				if ns, err := fallbackSubscriptionNodes(a.c, f, nil); err == nil {
+					v.State = &SubState{Nodes: len(ns), Cached: true}
+				}
+			}
+		} else if n, err := fallbackNode(f, nil); err != nil {
 			v.Err = err.Error()
 		} else {
 			v.Tag, v.Summary = n.Tag, nodeSummary(n)
@@ -382,5 +500,6 @@ func (a *App) saveFallbacks(in []Fallback, apply bool) error {
 		return err
 	}
 	lg.Printf("резервные узлы сохранены: %d", len(fbs))
+	a.kickRefresh()
 	return nil
 }

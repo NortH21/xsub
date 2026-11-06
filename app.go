@@ -32,19 +32,20 @@ type App struct {
 	w *Watcher
 	n *Notifier
 
-	mu        sync.Mutex
-	subs      []Subscription
-	states    map[string]*SubState // по URL
-	nodes     []Node
-	fbs       []Node // резервные узлы, принятые Xray
-	geoAt     time.Time
-	geoErr    string
-	applyErr  string
-	badNodes  []string
-	listWarns []string
-	written   [2][]byte // что xsub последний раз записал в 05_routing.json и 07_xsub.json
-	xrayGone  int       // сколько проверок подряд ядро не запущено
-	latest    string    // последняя версия на GitHub
+	mu             sync.Mutex
+	subs           []Subscription
+	states         map[string]*SubState // по URL
+	fallbackStates map[string]*SubState
+	nodes          []Node
+	fbs            []Node // резервные узлы, принятые Xray
+	geoAt          time.Time
+	geoErr         string
+	applyErr       string
+	badNodes       []string
+	listWarns      []string
+	written        [2][]byte // что xsub последний раз записал в 05_routing.json и 07_xsub.json
+	xrayGone       int       // сколько проверок подряд ядро не запущено
+	latest         string    // последняя версия на GitHub
 
 	upgrading  atomic.Bool // идёт обновление пакета: второе нажатие кнопки не нужно
 	refreshing atomic.Bool // идёт обновление подписок: страница следит за флагом в статусе
@@ -245,7 +246,8 @@ func (a *App) startup() {
 	haveSubs := len(a.subs) > 0
 	a.mu.Unlock()
 	// Сохранённых копий нет, а подписки есть — их сейчас скачает subLoop; лишний перезапуск Xray не нужен.
-	if len(nodes) > 0 || !haveSubs {
+	fbs, _ := fallbackNodes(a.c, nil)
+	if len(nodes) > 0 || len(fbs) > 0 || !haveSubs {
 		opMu.Lock()
 		defer opMu.Unlock()
 		_ = a.apply(nodes, "запуск", false)
@@ -354,6 +356,9 @@ func (a *App) refreshSubs(ctx context.Context) (failed bool) {
 	a.refreshing.Store(true)
 	defer a.refreshing.Store(false)
 	nodes := a.collect(ctx, true) // сеть: до полутора минут на подписку, сторож в это время работает
+	if a.refreshFallbackSubscriptions(ctx) {
+		failed = true
+	}
 	a.mu.Lock()
 	for _, st := range a.states {
 		if st.Err != "" {
